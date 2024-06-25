@@ -209,7 +209,7 @@ def _normalize_pnts(surf_pnts, edge_pnts, corner_pnts):
         
         local_offset = min_vals + (max_vals - min_vals)/2 
         local_scale = max(max_vals - min_vals)
-        pnt_ncs = (surf_pnt_wcs - local_offset[np.newaxis,np.newaxis,:]) / (local_scale * 0.5)
+        pnt_ncs = (surf_pnt_wcs - local_offset[np.newaxis,np.newaxis,:]) / (local_scale * 0.5 + 1e-6)
         surfs_ncs.append(pnt_ncs)
        
     # Normalize edge
@@ -313,8 +313,8 @@ def prepare_edge_data(
     edge_pnts = np.stack(edge_pnts, axis=0)
     edge_uvs = np.stack(edge_uvs, axis=0)
     
-    print('*** edge_pnts: ', edge_pnts.shape, edge_pnts.reshape(-1, 3).min(0), edge_pnts.reshape(-1, 3).max(0))
-    print('*** edge_uvs: ', edge_uvs.shape, edge_uvs.reshape(-1, 2).min(0), edge_uvs.reshape(-1, 2).max(0))
+    # print('*** edge_pnts: ', edge_pnts.shape, edge_pnts.reshape(-1, 3).min(0), edge_pnts.reshape(-1, 3).max(0))
+    # print('*** edge_uvs: ', edge_uvs.shape, edge_uvs.reshape(-1, 2).min(0), edge_uvs.reshape(-1, 2).max(0))
 
     corner_pnts = edge_pnts[:, [0, -1], :]
     corner_uvs = edge_uvs[:, [0, -1], :]
@@ -445,9 +445,7 @@ def process_data(
         glctx=None,
         num_samples=64,
         use_global_bbox=False,
-        output_dir=None):
-
-    print('*** Processing data: ', data_item)
+        output_fp=None):
 
     mesh_fp = os.path.join(data_item, os.path.basename(data_item)+'.obj')
     pattern_fp = os.path.join(data_item, 'pattern.json')
@@ -487,6 +485,7 @@ def process_data(
     # corner_uv_unique = ...
     
     result = {
+        'data_fp': data_item,
         'surf_wcs': np.concatenate([surfs_wcs, surf_uvs_wcs], axis=-1).astype(np.float32),          # (num_panels, num_samples, num_samples, 5) -> x, y, z, u, v
         'edge_wcs': np.concatenate([edges_wcs, edge_uvs_wcs], axis=-1).astype(np.float32),          # (num_edges,  num_samples, 5) -> x, y, z, u, v
         'surf_ncs': np.concatenate([surfs_ncs, surf_uvs_ncs], axis=-1).astype(np.float32),          # normalized surf_wcs
@@ -502,26 +501,25 @@ def process_data(
         'global_scale': np.array([global_scale, uv_scale], dtype=np.float32),                       # array of shape (2,) (scale_xyz, scale_uv)
     }
 
-    if output_dir:
-        with open(os.path.join(output_dir, '%s.pkl' % (os.path.basename(output_dir))), 'wb') as f:
-            pickle.dump(result, f)
+    if output_fp:
+        with open(output_fp, 'wb') as f: pickle.dump(result, f)
 
     return result
 
 
 def process_item(data_idx, data_item, args, glctx):
-    # try:
-    output_dir = os.path.join(args.output, '%04d' % (data_idx))
-    out_folder = data_item.replace(args.input, args.output)
-    os.makedirs(out_folder, exist_ok=True)
-    result = process_data(
-        data_item, glctx=glctx, num_samples=64, 
-        use_global_bbox=False, output_dir=out_folder)
-    return None, data_item
-    # except Exception as e:
-    #     return str(e), data_item
+    try:
+        output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))
+        if os.path.exists(output_fp) and os.path.getsize(output_fp): return None, data_item
+        
+        _ = process_data(
+            data_item, glctx=glctx, num_samples=64, 
+            use_global_bbox=False, output_fp=output_fp)
+        
+        return None, data_item
 
-
+    except Exception as e:
+        return str(e), data_item
 
 
 if __name__ == '__main__':
@@ -551,13 +549,16 @@ if __name__ == '__main__':
     wrong_files = 'wrong_edge_face_normalize_adj.txt'
     failed_items = []
 
+    os.makedirs(args.output, exist_ok=True)
+
     with open(wrong_files, 'a+') as wrong_fp:
-        with ThreadPoolExecutor(max_workers=1) as executor:  # 可以调整max_workers以改变并行度
-            futures = {executor.submit(process_item, data_idx, data_item, args, glctx): data_item for data_idx, data_item in enumerate(data_items)}
+        with ThreadPoolExecutor(max_workers=4) as executor:  # 可以调整max_workers以改变并行度
+            futures = {executor.submit(
+                process_item, data_idx, data_item, args, glctx): data_item for data_idx, data_item in enumerate(data_items)}
 
             for future in tqdm(as_completed(futures), total=len(futures)):
                 error, data_item = future.result()
                 if error:
-                    print('[ERROR] Failed to process data:', data_item)
+                    print('[ERROR] Failed to process data:', data_item, error)
                     failed_items.append(data_item)
                     wrong_fp.write(f"{data_item}, {error}\n")

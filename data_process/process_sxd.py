@@ -246,6 +246,7 @@ def prepare_edge_data(
 
     verts = mesh_obj.points
     uv = mesh_obj.point_data['obj:vt']
+    normal = mesh_obj.point_data['obj:vn']
 
     # global normalization to (-1, 1) for the whole
     if global_bbox is not None:
@@ -256,7 +257,7 @@ def prepare_edge_data(
 
     panel_data = dict([(x['id'], x) for x in pattern_spec['panels']])
 
-    edge_ids, edge_pnts, edge_uvs = [], [], []
+    edge_ids, edge_pnts, edge_uvs, edge_norms = [], [], [], []
     faceEdge_adj = {}
 
     for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
@@ -268,13 +269,18 @@ def prepare_edge_data(
         panel_center = np.asarray(panel_spec['center'])
 
         boundary = igl.boundary_facets(panel_faces)
+        
         boundary_uv = np.stack([
             (uv[boundary[:, 0], :]-panel_center)[:, :2],
             (uv[boundary[:, 1], :]-panel_center)[:, :2]],
             axis=1
         )
+        
         boundary_pos = np.stack(
             [verts[boundary[:, 0], :], verts[boundary[:, 1], :]], axis=1)
+        
+        boundary_norm = np.stack(
+            [normal[boundary[:, 0], :], normal[boundary[:, 1], :]], axis=1)
 
         verts_colors = _PANEL_COLORS[_PANEL_CLS.index(
             panel_data[panel_id]['label'].strip())+1, :3][None]
@@ -303,23 +309,34 @@ def prepare_edge_data(
                     continue   # TODO:内部线问题？（待验证）
 
                 _, sample_pos = _project_curve_to_line_segments(
-                    edge_samples, boundary_uv[within_bbox, :, :], boundary_pos[within_bbox, :, :])
+                    edge_samples, 
+                    boundary_uv[within_bbox, :, :], 
+                    np.concatenate([boundary_pos[within_bbox, :], boundary_norm[within_bbox, :]], axis=-1)
+                )
+
+                sample_pos, sample_norm = sample_pos[..., :3], sample_pos[..., 3:]
 
                 edge_ids.append(edge['id'])
                 edge_pnts.append(sample_pos)
+                edge_norms.append(sample_norm)
                 edge_uvs.append(edge_samples + panel_center[..., :2][None])
                 faceEdge_adj[panel_id].append(edge['id'])
             
     edge_pnts = np.stack(edge_pnts, axis=0)
     edge_uvs = np.stack(edge_uvs, axis=0)
+    edge_norms = np.stack(edge_norms, axis=0)
     
     # print('*** edge_pnts: ', edge_pnts.shape, edge_pnts.reshape(-1, 3).min(0), edge_pnts.reshape(-1, 3).max(0))
     # print('*** edge_uvs: ', edge_uvs.shape, edge_uvs.reshape(-1, 2).min(0), edge_uvs.reshape(-1, 2).max(0))
 
     corner_pnts = edge_pnts[:, [0, -1], :]
     corner_uvs = edge_uvs[:, [0, -1], :]
+    corner_norms = edge_norms[:, [0, -1], :]
 
-    return edge_ids, edge_pnts, edge_uvs, corner_pnts, corner_uvs, faceEdge_adj
+    # print('*** edge_norm: ', edge_norms.shape, edge_norms.min(), edge_norms.max())
+    # print('*** corner_norm: ', corner_norms.shape, corner_norms.min(), corner_norms.max())
+
+    return edge_ids, edge_pnts, edge_uvs, edge_norms, corner_pnts, corner_uvs, corner_norms, faceEdge_adj
 
 
 def prepare_surf_data(
@@ -334,6 +351,7 @@ def prepare_surf_data(
 
     verts = torch.from_numpy(mesh_obj.points).to(torch.float32).to('cuda')
     uv = torch.from_numpy(mesh_obj.point_data['obj:vt']).to(torch.float32).to('cuda')
+    norm = torch.from_numpy(mesh_obj.point_data['obj:vn']).to(torch.float32).to('cuda')
 
     if global_bbox is not None:
         global_bbox = torch.tensor(global_bbox).to(torch.float32).to ('cuda')
@@ -387,8 +405,11 @@ def prepare_surf_data(
 
     surf_pnts = _interpolate_feature_dr(rast, uv_local, tris, verts)
     surf_uvs = _interpolate_feature_dr(rast, uv_local, tris, uv)[..., :2]
+    surf_norms = _interpolate_feature_dr(rast, uv_local, tris, norm)
 
-    return surf_pnts, surf_uvs, panel_ids
+    # print('*** surf_norm: ', surf_norms.shape, surf_norms.min(), surf_norms.max())
+
+    return panel_ids, surf_pnts, surf_uvs, surf_norms
 
 
 def face_edge_adj(json_content: dict, panel_ids: list, edge_ids: list):
@@ -458,19 +479,19 @@ def process_data(
     if glctx is None:
         glctx = dr.RasterizeCudaContext()
 
-    surf_pnts, surf_uvs, panel_ids = prepare_surf_data(
+    surf_ids, surf_pnts, surf_uvs, surf_norms = prepare_surf_data(
         glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_samples,
         global_bbox=_AVATAR_BBOX if use_global_bbox else None
     )
 
     # edge && corner
-    edge_ids, edge_pnts, edge_uvs, corner_pnts, corner_uvs, faceEdge_adj = prepare_edge_data(
+    edge_ids, edge_pnts, edge_uvs, edge_norms, corner_pnts, corner_uvs, corner_norms, faceEdge_adj = prepare_edge_data(
         mesh_obj, pattern_spec, reso=num_samples,
         global_bbox=_AVATAR_BBOX if use_global_bbox else None
     )
 
     # faceEdge_adj = face_edge_adj(pattern_spec, panel_ids_, edge_ids)
-    faceEdge_adj = _face_edge_to_id(faceEdge_adj, panel_ids, edge_ids)
+    faceEdge_adj = _face_edge_to_id(faceEdge_adj, surf_ids, edge_ids)
         
     surfs_wcs, edges_wcs, surfs_ncs, edges_ncs, corner_wcs, global_offset, global_scale = _normalize_pnts(
         surf_pnts, edge_pnts, corner_pnts)
@@ -490,7 +511,10 @@ def process_data(
         'edge_wcs': np.concatenate([edges_wcs, edge_uvs_wcs], axis=-1).astype(np.float32),          # (num_edges,  num_samples, 5) -> x, y, z, u, v
         'surf_ncs': np.concatenate([surfs_ncs, surf_uvs_ncs], axis=-1).astype(np.float32),          # normalized surf_wcs
         'edge_ncs': np.concatenate([edges_ncs, edge_uvs_ncs], axis=-1).astype(np.float32),          # normalized edge_wcs
+        'surf_norm': surf_norms.astype(np.float32),
+        'edge_norm': edge_norms.astype(np.float32),
         'corner_wcs': np.concatenate([corner_wcs, corner_uv_wcs], axis=-1).astype(np.float32),      # (num_edges, 2, 5) -> x, y, z, u, v of start/end point for each edge 
+        'corner_norm': corner_norms.astype(np.float32),
         'edgeFace_adj': None,
         'edgeCorner_adj':None,
         'faceEdge_adj': faceEdge_adj,
@@ -508,18 +532,18 @@ def process_data(
 
 
 def process_item(data_idx, data_item, args, glctx):
-    try:
-        output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))
-        if os.path.exists(output_fp) and os.path.getsize(output_fp): return None, data_item
-        
-        _ = process_data(
-            data_item, glctx=glctx, num_samples=64, 
-            use_global_bbox=False, output_fp=output_fp)
-        
-        return None, data_item
+    # try:
+    output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))
+    if os.path.exists(output_fp) and os.path.getsize(output_fp): return None, data_item
+    
+    _ = process_data(
+        data_item, glctx=glctx, num_samples=64, 
+        use_global_bbox=False, output_fp=output_fp)
+    
+    return None, data_item
 
-    except Exception as e:
-        return str(e), data_item
+    # except Exception as e:
+    return str(e), data_item
 
 
 if __name__ == '__main__':
@@ -542,7 +566,7 @@ if __name__ == '__main__':
 
     data_root = args.input
     data_items = sorted([os.path.dirname(x) for x in glob(
-        os.path.join(data_root, '**', 'pattern.json'), recursive=True)])
+        os.path.join(data_root, '**', 'pattern.json'), recursive=True)])[:4]
     
     print('Total num items: ', len(data_items))
     

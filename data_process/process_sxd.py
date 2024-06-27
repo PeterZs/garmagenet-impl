@@ -206,7 +206,9 @@ def prepare_edge_data(
         panel_corner_uvs = []
 
         for seg_edge in panel_spec['seqEdges']:
-
+            # skip inner line, only consider sew line
+            if seg_edge['type'] != 3: continue
+            
             panel_corner_uvs.append(np.asarray(
                 seg_edge['vertices'], dtype=np.float32))
 
@@ -224,14 +226,7 @@ def prepare_edge_data(
                     (boundary_uv[:, 1, :] >= edge_bbox[0]) &
                     (boundary_uv[:, 1, :] <= edge_bbox[1]), axis=-1)
 
-                if within_bbox.sum() == 0:
-                    continue   # TODO:内部线问题？（待验证）
-
-                # print('*** edge features: ',
-                #       boundary_normals[within_bbox, :, :].shape, 
-                #       boundary_pos[within_bbox, :, :].shape, 
-                #       boundary_uv[within_bbox, :, :].shape, 
-                #       edge_samples.shape)
+                if within_bbox.sum() == 0: continue
                 
                 _, sample_pos = _project_curve_to_line_segments(
                     edge_samples, boundary_uv[within_bbox, :, :], 
@@ -327,6 +322,7 @@ def prepare_surf_data(
 
         uv_local[vert_ids, :] = (uv_local[vert_ids, :] - panel_bbox2d[0]) / (
             panel_bbox2d[1] - panel_bbox2d[0] + 1e-6)      # normalize to [0, 1]
+        
 
     tris = torch.cat(tris, dim=0).to(torch.int32)
     # panel triangle range#
@@ -565,18 +561,18 @@ def process_data(
 
 
 def process_item(data_idx, data_item, args, glctx):
-    try:
-        os.makedirs(args.output, exist_ok=True)
-        output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))    
-        result = process_data(
-            data_item, glctx=glctx, 
-            num_samples=64, use_global_bbox=True)
-        
-        with open(output_fp, 'wb') as f: pickle.dump(result, f)
-        return True, data_item
+    # try:
+    os.makedirs(args.output, exist_ok=True)
+    output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))    
+    result = process_data(
+        data_item, glctx=glctx, 
+        num_samples=64, use_global_bbox=True)
     
-    except Exception as e:
-        return False, f"{data_item} | [ERROR] {e}"
+    with open(output_fp, 'wb') as f: pickle.dump(result, f)
+    return True, data_item
+    
+    # except Exception as e:
+    #     return False, f"{data_item} | [ERROR] {e}"
 
 
 if __name__ == '__main__':
@@ -609,7 +605,7 @@ if __name__ == '__main__':
     os.makedirs(args.output, exist_ok=True)
 
     with open(wrong_files, 'a+') as wrong_fp:
-        with ThreadPoolExecutor(max_workers=1) as executor:  # 可以调整max_workers以改变并行度
+        with ThreadPoolExecutor(max_workers=4) as executor:  # 可以调整max_workers以改变并行度
             futures = {executor.submit(
                 process_item, data_idx, data_item, args, glctx): data_item for data_idx, data_item in enumerate(data_items)}
 

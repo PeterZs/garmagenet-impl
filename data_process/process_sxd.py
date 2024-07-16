@@ -229,11 +229,10 @@ def prepare_edge_data(
         panel_corner_uvs = []
 
         for seg_edge in panel_spec['seqEdges']:
+            
             # skip inner line, only consider sew line
             if seg_edge['type'] != 3: continue
-            
-            panel_corner_uvs.append(np.asarray(
-                seg_edge['vertices'], dtype=np.float32))
+            panel_corner_uvs.append(np.asarray(seg_edge['vertices'], dtype=np.float32))
 
             # processing edge
             for edge in seg_edge['edges']:
@@ -399,6 +398,7 @@ def face_edge_adj(json_content: dict, panel_ids: list, edge_ids: list):
             continue
         panel_edge_dict[panel_id] = []
         id_info[panel['id']] = []
+        
         for edge_seq in panel['seqEdges']:
             for edge in edge_seq['edges']:
                 id_info[panel['id']].append(edge['id'])

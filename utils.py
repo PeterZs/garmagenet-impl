@@ -110,6 +110,7 @@ def pad_zero(x, max_len, return_mask=False):
     keys = np.ones(len(x))
     padding = np.zeros((max_len-len(x))).astype(int)  
     mask = 1-np.concatenate([keys, padding]) == 1  
+    
     padding = np.zeros((max_len-len(x), *x.shape[1:]))
     x_padded = np.concatenate([x, padding], axis=0)
     if return_mask:

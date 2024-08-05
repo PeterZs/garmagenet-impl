@@ -60,7 +60,6 @@ _GLOBAL_OFFSET = np.array([0.0, 1000.0, 0.0])
 _GLOBAL_SCALE_UV = 2500.0
 _GLOBAL_OFFSET_UV = np.array([0.0, 1000.0])
 
-
 def _get_bbox(point_sets, points_mask=None):
     num_sets = point_sets.shape[0]
     p_dim = point_sets.shape[-1]
@@ -497,7 +496,8 @@ def normalize(
 def process_data(
         data_item: str,
         glctx=None,
-        num_samples=64,
+        num_edge_samples=16,
+        num_surf_samples=256,
         use_uni_norm=True):
 
     # print('*** Processing data: ', data_item)
@@ -513,12 +513,12 @@ def process_data(
     if glctx is None: glctx = dr.RasterizeCudaContext()
 
     panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask = prepare_surf_data(
-        glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_samples
+        glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_surf_samples
     )
 
     # edge && corner
     edge_ids, edge_pnts, edge_uvs, edge_normals, corner_pnts, corner_uvs, corner_normals, faceEdge_adj = prepare_edge_data(
-        mesh_obj, pattern_spec, reso=num_samples
+        mesh_obj, pattern_spec, reso=num_edge_samples
     )
 
     faceEdge_adj = face_edge_to_id(faceEdge_adj, panel_ids, edge_ids)
@@ -576,11 +576,12 @@ def process_data(
 def process_item(data_idx, data_item, args, glctx):
     try:
         os.makedirs(args.output, exist_ok=True)
-        output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))    
+        output_fp = os.path.join(args.output, '%05d.pkl' % (data_idx))    
         
         result = process_data(
             data_item, glctx=glctx, 
-            num_samples=64)
+            num_edge_samples=args.ne, 
+            num_surf_samples=args.nf)
         
         with open(output_fp, 'wb') as f: pickle.dump(result, f)
         return True, data_item
@@ -600,6 +601,8 @@ if __name__ == '__main__':
                         help="Path to executable.")
     parser.add_argument("--use_uni_norm", action='store_true',
                         help="Whether to apply universal normalization for the output data. Use predefined global scale and offset for the whole dataset if specified otherwise calculate from each data item.")
+    parser.add_argument('--ne', default=16, type=int, help='Number of edge samples.')
+    parser.add_argument('--nf', default=256, type=int, help='Number of surface samples.')
 
     args, cfg_cmd = parser.parse_known_args()
 
@@ -614,7 +617,7 @@ if __name__ == '__main__':
         cur_data_items = sorted([os.path.dirname(x) for x in glob(
             os.path.join(data_root, '**', 'pattern.json'), recursive=True)])
         data_items += cur_data_items
-        print('[%02d/%02d] Found %d items in %s.'%(idx, len(data_root_dirs), len(cur_data_items), data_root))
+        print('[%02d/%02d] Found %d items in %s.'%(idx+1, len(data_root_dirs), len(cur_data_items), data_root))
     print('Total items: ', len(data_items))
 
     log_file = os.path.join(args.output, 'app.log')
@@ -625,10 +628,14 @@ if __name__ == '__main__':
             data_items = [x for x in data_items if x not in processed]
 
     if args.range is not None:
-        begin, end = args.range.split(",")
-        begin, end = max(0, int(begin)), min(int(end), len(data_items))
-        data_items = data_items[begin:end]
-        print("Extracting range: %d %s" % (len(data_items), args.output))
+        if ',' in args.range:
+            begin, end = args.range.split(",")
+            begin, end = max(0, int(begin)), min(int(end), len(data_items))
+            data_items = data_items[begin:end]
+            print("Extracting range: %d %s" % (len(data_items), args.output))
+        else:
+            data_items = random.choices(data_items, k=int(args.range))
+            print("Extracting random items: %d %s" % (len(data_items), args.output))
 
     os.makedirs(args.output, exist_ok=True)
 

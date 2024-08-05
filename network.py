@@ -370,6 +370,7 @@ class AutoencoderKL1D(ModelMixin, ConfigMixin):
             act_fn=act_fn,
             norm_num_groups=norm_num_groups,
             double_z=True,
+            
         )
 
         # pass init params to Decoder

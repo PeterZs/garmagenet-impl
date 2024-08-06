@@ -326,18 +326,29 @@ def sample(eval_args):
                 bbox_start_end = bbox_start_end.reshape(2,3)
                 bbox_startends.append(bbox_start_end.reshape(1,2,3))
             bbox_startends = np.vstack(bbox_startends)
-            edgeV_bbox.append(bbox_startends)
+            edgeV_bbox.append(bbox_startends)   # predicted end points (wcs) of each edge
         
         ### 3-1: Detect shared vertices ###
         try:
-            unique_vertices, new_vertex_dict = detect_shared_vertex(edgeV_cad, edge_mask_cad, edgeV_bbox)
+            unique_vertices, new_vertex_dict = detect_shared_vertex(
+                edgeV_cad,          # predicted vertex position, (n_panels, n_edges, 2, 3)
+                edge_mask_cad,      # mask for repeated edges (n_panels, n_edges)
+                edgeV_bbox          # predicted end points (wcs) of each edge, (n_panels, n_edges, 2, 3)
+                )
         except Exception as e:
             print('Vertex detection failed...')
             continue
         
         ### 3-2: Detect shared edges ###
         try:
-            unique_faces, unique_edges, FaceEdgeAdj, EdgeVertexAdj = detect_shared_edge(unique_vertices, new_vertex_dict, edge_z_cad, surf_z_cad, z_threshold, edge_mask_cad)
+            unique_faces, unique_edges, FaceEdgeAdj, EdgeVertexAdj = detect_shared_edge(
+                unique_vertices, 
+                new_vertex_dict, 
+                edge_z_cad, 
+                surf_z_cad, 
+                z_threshold, 
+                edge_mask_cad
+                )
         except Exception as e:
             print('Edge detection failed...')
             continue

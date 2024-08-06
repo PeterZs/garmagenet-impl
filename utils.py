@@ -461,14 +461,19 @@ def keep_largelist(int_lists):
     return unique_int_lists
 
 
-def detect_shared_vertex(edgeV_cad, edge_mask_cad, edgeV_bbox):
+def detect_shared_vertex(
+    edgeV_cad,          # network predicted vertices, (n_panels, n_edges, 2, 3)
+    edge_mask_cad,      # network predicted mask, (n_panels, n_edges)
+    edgeV_bbox          # network predicted end points for edges in each panel, (n_panels, n_edges, 2, 3)
+    ):
     """
     Find the shared vertices 
     """
-    edge_id_offset = 2 * np.concatenate([np.array([0]),np.cumsum((edge_mask_cad==False).sum(1))])[:-1]
+    edge_id_offset = 2 * np.concatenate([
+        np.array([0]),
+        np.cumsum((edge_mask_cad==False).sum(1))])[:-1]
     valid = True
     
-    # Detect shared-vertex on seperate face loop
     used_vertex = []
     face_sep_merges = []
     for face_idx, (face_edges, face_edges_mask, bbox_edges) in enumerate(zip(edgeV_cad, edge_mask_cad, edgeV_bbox)):

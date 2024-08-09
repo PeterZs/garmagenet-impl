@@ -11,3 +11,5 @@ scipy
 trimesh
 plyfile
 scikit-learn
+scikit-image
+shapely

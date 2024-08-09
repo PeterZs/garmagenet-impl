@@ -60,6 +60,7 @@ _GLOBAL_OFFSET = np.array([0.0, 1000.0, 0.0])
 _GLOBAL_SCALE_UV = 2500.0
 _GLOBAL_OFFSET_UV = np.array([0.0, 1000.0])
 
+
 def _get_bbox(point_sets, points_mask=None):
     num_sets = point_sets.shape[0]
     p_dim = point_sets.shape[-1]
@@ -190,6 +191,46 @@ def _project_curve_to_line_segments(curve_pts, line_segments, line_features):
 
     return belonging_segments, query_feat
 
+
+def _get_vert_cls(mesh_obj, 
+                  pattern_spec, 
+                  cls_label={'bg': 0, 'surf': 1, 'edge': 2, 'vert': 3}):
+    
+    verts = mesh_obj.points
+    uv = mesh_obj.point_data['obj:vt']
+    normals = mesh_obj.point_data['obj:vn']
+    
+    panel_data = dict([(x['id'], x) for x in pattern_spec['panels']])
+    
+    # by default all points are surface points, set vert class to '1'
+    vert_cls = np.ones_like(verts[:, 0], dtype=np.uint8) * cls_label['surf']    
+    
+    for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
+        panel_faces = mesh_obj.cells[idx].data
+        panel_spec = panel_data[panel_id]
+        
+        panel_center = np.asarray(panel_spec['center'])
+        
+        # identifying edge vertices
+        boundary = igl.boundary_facets(panel_faces)
+        boundary_verts = np.unique(boundary)
+        vert_cls[boundary_verts] = cls_label['edge']
+        
+        # identifying corner vertices
+        panel_corner_uvs = np.concatenate(
+            [np.asarray(seg_edge['vertices'], dtype=np.float32) for seg_edge in panel_spec['seqEdges']],
+            axis=0
+        )
+        boundary_uv = uv[boundary_verts, :] - panel_center[None]
+        panel_corner_vert_dists = np.linalg.norm(
+            panel_corner_uvs[:, None, :] - boundary_uv[None], axis=-1)
+        panel_corner_vert_idx = np.argmin(panel_corner_vert_dists, axis=-1)
+        vert_cls[panel_corner_vert_idx] = cls_label['vert']
+                    
+    print('*** vert cls: ', np.unique(vert_cls))
+   
+    return vert_cls 
+    
 
 def prepare_edge_data(
     mesh_obj,

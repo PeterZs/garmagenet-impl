@@ -8,6 +8,10 @@ import numpy as np
 import torch
 import nvdiffrast.torch as dr
 
+import scipy
+import skimage
+import einops
+
 import random
 
 import igl
@@ -15,10 +19,9 @@ from geomdl import fitting, BSpline, utilities
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from matplotlib.colors import to_rgba
 
-torch.set_grad_enabled(False)
-
 from geometry_utils.obj import read_obj  # type: ignore
 
+torch.set_grad_enabled(False)
 
 _CMAP = {
     "帽": {"alias": "帽", "color": "#F7815D"},
@@ -94,7 +97,6 @@ def _get_scale_offset(point_sets, points_mask):
 def _interpolate_feature_dr(rast, pos, tris, feat, antialias=False):
 
     out, _ = dr.interpolate(feat[None], rast, tris)
-    print('[INTERPOLATE] out: ', out.shape, rast.shape, pos.shape, tris.shape)
     if antialias: out = dr.antialias(out, rast, pos, tris)
     out = out.detach().cpu().numpy()
 
@@ -233,6 +235,55 @@ def _get_vert_cls(mesh_obj,
     return vert_cls 
     
 
+def _rasterize_boundary_facets(boundary_facets, feat, uv,  reso=64):
+    """Rasterize boundary facets (lines) to a 2D image with simple line rasterization
+
+    Args:
+        boundary_facets (np.ndarray): boundary facets of shape (N, 2), where N is the number of boundary edges
+        feat (np.ndarray): per-vertex features of shape (M, C), where M is the number of vertices
+        uv (np.ndarray): vertex uv of shape (M, 2)
+        reso (int): rasterization resolution
+    
+    Returns:
+        'feat': np.ndarray, feature image of shape (reso, reso, C)
+    """    
+    raise NotImplementedError
+
+    
+def _downsample_sparse_pooling(x, factor=16, anti_aliasing=False):
+    """ downsample input array with sparse pooling
+    Args:
+        x: np.ndarray, (H, W, C + 1), original feature tensor of shape (H, W, C) with additional occupancy channel
+        factor: int, downsample factor
+        anti_aliasing: bool, whether to use anti_aliasing
+    Returns:
+        'feat_down': np.ndarray, downsampled feat with edge snapping
+    """
+    # assuming feat is 1024 x 1024
+    occ = x[..., -1]>=.5
+    eroded_mask = scipy.ndimage.binary_erosion(occ, structure=np.ones((3,3))) # sqaure strucure is needed to get the corners
+    edge_occ = ~eroded_mask & occ
+    edge_feat = x.copy()
+    edge_feat[edge_occ==0] = -1.
+    
+    edge_occ_patches = einops.rearrange(edge_occ, '(h1 h2) (w1 w2) -> h1 w1 h2 w2', h2=factor, w2=factor)
+    edge_occ_down = edge_occ_patches.max(axis=-1).max(axis=-1)
+    eod_0_count  = (edge_occ_patches==0).sum(axis=-1).sum(axis=-1)
+    eod_1_count  = (edge_occ_patches==1).sum(axis=-1).sum(axis=-1)
+    edge_feat_patches = einops.rearrange(edge_feat, '(h1 h2) (w1 w2) c-> h1 w1 h2 w2 c', h2=factor, w2=factor)
+    edge_feat_down = edge_feat_patches.sum(axis=-2).sum(axis=-2) + eod_0_count[...,None]
+    edge_feat_down = np.divide(edge_feat_down, eod_1_count[...,None], out=np.zeros_like(edge_feat_down), where=eod_1_count[...,None]!=0)
+
+    downsampled = skimage.transform.resize(
+        x, (x.shape[0]//factor,)*2, order=0, 
+        preserve_range=False, anti_aliasing=anti_aliasing)
+    
+    # edge snapping
+    downsampled = edge_feat_down * (edge_occ_down[...,None]) + downsampled * (1-edge_occ_down[...,None])
+        
+    return downsampled
+    
+    
 def prepare_edge_data(
     mesh_obj,
     pattern_spec,
@@ -244,7 +295,7 @@ def prepare_edge_data(
     normals = mesh_obj.point_data['obj:vn']
 
     panel_data = dict([(x['id'], x) for x in pattern_spec['panels']])
-    edge_ids, edge_wcs, edge_uvs, edge_normals = [], [], [], []
+    edge_ids, edge_wcs, edge_uvs = [], [], []
     corner_wcs, corner_uvs, corner_normals = [], [], []
     
     faceEdge_adj = {}
@@ -293,19 +344,14 @@ def prepare_edge_data(
                 
                 _, sample_pos = _project_curve_to_line_segments(
                     edge_samples, boundary_uv[within_bbox, :, :], 
-                    np.concatenate([
-                        boundary_pos[within_bbox, :, :], 
-                        boundary_normals[within_bbox, :, :]], 
-                        axis=-1)
+                    boundary_pos[within_bbox, :, :]
                     )
                 
-                sample_pos, sample_normal = sample_pos[:, :3], sample_pos[:, 3:]
                 edge_samples = edge_samples + panel_center[None, :2]
 
                 edge_ids.append(edge['id'])
                 edge_wcs.append(sample_pos)
                 edge_uvs.append(edge_samples)
-                edge_normals.append(sample_normal)
 
                 faceEdge_adj[panel_id].append(edge['id'])
 
@@ -335,20 +381,20 @@ def prepare_edge_data(
 
     edge_wcs = np.stack(edge_wcs, axis=0)
     edge_uvs = np.stack(edge_uvs, axis=0)
-    edge_normals = np.stack(edge_normals, axis=0)
     
     corner_uvs = np.concatenate(corner_uvs, axis=0)
     corner_wcs = np.concatenate(corner_wcs, axis=0)
     corner_normals = np.concatenate(corner_normals, axis=0)
 
-    return edge_ids, edge_wcs, edge_uvs, edge_normals, corner_wcs, corner_uvs, corner_normals, faceEdge_adj
+    return edge_ids, edge_wcs, edge_uvs, corner_wcs, corner_uvs, corner_normals, faceEdge_adj
 
 
 def prepare_surf_data(
     glctx,
     mesh_obj,
     pattern_spec,
-    reso=64
+    reso=64          # original rasterization resolution
+    # down_factor=-1    # downsample factor
 ):
 
     verts = torch.from_numpy(mesh_obj.points).to(torch.float32).to('cuda')
@@ -391,13 +437,13 @@ def prepare_surf_data(
         uv_local[vert_ids, :] = (uv_local[vert_ids, :] - panel_bbox2d[0]) / (
             panel_bbox2d[1] - panel_bbox2d[0] + 1e-6)      # normalize to [0, 1]
         
-        # check boundary vertices
-        boundary = igl.boundary_facets(panel_faces)
-        boundary_verts_idx = np.unique(boundary)
-        print('[SURF] boundary_verts_idx: ', boundary_verts_idx.shape)
+        # # check boundary vertices
+        # boundary = igl.boundary_facets(panel_faces)
+        # boundary_verts_idx = np.unique(boundary)
+        # print('[SURF] boundary_verts_idx: ', boundary_verts_idx.shape)
         
-        boundary_verts_uv.append(uv_local[boundary_verts_idx, :].cpu().numpy())
-        boundary_verts.append(verts[boundary_verts_idx, :].cpu().numpy())
+        # boundary_verts_uv.append(uv_local[boundary_verts_idx, :].cpu().numpy())
+        # boundary_verts.append(verts[boundary_verts_idx, :].cpu().numpy())
         
     tris = torch.cat(tris, dim=0).to(torch.int32)
     # panel triangle range#
@@ -411,14 +457,31 @@ def prepare_surf_data(
         torch.ones_like(uv_local[:, :1])], dim=1)
 
     rast, _ = dr.rasterize(
-        glctx, uv_local, tris, resolution=[reso, reso], 
+        glctx, uv_local, tris, resolution=[1024, 1024], 
         ranges=tri_ranges, grad_db=False)
 
-    surf_pnts = _interpolate_feature_dr(rast, uv_local, tris, verts)
-    surf_uvs = _interpolate_feature_dr(rast, uv_local, tris, uv)[..., :2]
-    surf_norms = _interpolate_feature_dr(rast, uv_local, tris, normals)
+    vert_feat = torch.cat([verts, uv[..., :2], normals], dim=-1)    # dim: (N, 8), xyz + uv + normal
+    surf_feat = _interpolate_feature_dr(rast, uv_local, tris, vert_feat)
     surf_mask = (rast[..., 3:]>0).squeeze(0).cpu().numpy()
         
+    down_factor = 1024 // reso
+    if down_factor > 1:
+        downsampled_feat = []
+        for s_idx in range(surf_feat.shape[0]):
+            downsampled_feat.append(
+                _downsample_sparse_pooling(
+                    np.concatenate([surf_feat[s_idx], surf_mask[s_idx]], axis=-1), 
+                    factor=down_factor, anti_aliasing=False
+                    )
+                )
+        
+        surf_feat = np.stack(downsampled_feat, axis=0)
+        surf_feat, surf_mask = surf_feat[..., :-1], surf_feat[..., -1:].astype(bool)
+        
+    # spliting surf_feat
+    surf_pnts, surf_uvs, surf_norms = \
+        surf_feat[..., :3], surf_feat[..., 3:5], surf_feat[..., 5:8]
+                                    
     return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask
 
 
@@ -568,7 +631,7 @@ def process_data(
     )
 
     # edge && corner
-    edge_ids, edge_pnts, edge_uvs, edge_normals, corner_pnts, corner_uvs, corner_normals, faceEdge_adj = prepare_edge_data(
+    edge_ids, edge_pnts, edge_uvs, corner_pnts, corner_uvs, corner_normals, faceEdge_adj = prepare_edge_data(
         mesh_obj, pattern_spec, reso=num_edge_samples
     )
 
@@ -607,7 +670,6 @@ def process_data(
         'uv_scale': uv_scale,
         # normal
         'surf_normals': surf_norms.astype(np.float32),
-        'edge_normals': edge_normals.astype(np.float32),
         'corner_normals': corner_normals.astype(np.float32),
         # adj
         'faceEdge_adj': faceEdge_adj
@@ -692,7 +754,7 @@ if __name__ == '__main__':
 
     failed_items = []
     with open(log_file, 'a+') as f:
-        with ThreadPoolExecutor(max_workers=8) as executor:  # 可以调整max_workers以改变并行度
+        with ThreadPoolExecutor(max_workers=1) as executor:  # 可以调整max_workers以改变并行度
             futures = {executor.submit(
                 process_item, data_idx, data_item, args, glctx): data_item for data_idx, data_item in enumerate(data_items)}
 

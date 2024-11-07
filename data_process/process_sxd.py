@@ -224,7 +224,7 @@ def _get_vert_cls(mesh_obj,
         
         # identifying corner vertices
         panel_corner_uvs = np.concatenate(
-            [np.asarray(seg_edge['vertices'], dtype=np.float32) for seg_edge in panel_spec['seqEdges']],
+            [np.asarray(seq_edge['vertices'], dtype=np.float32) for seq_edge in panel_spec['seqEdges']],
             axis=0
         )
         boundary_uv = uv[boundary_verts, :] - panel_center[None]
@@ -323,14 +323,14 @@ def prepare_edge_data(
 
         panel_corner_uvs = []
 
-        for seg_edge in panel_spec['seqEdges']:
+        for seq_edge in panel_spec['seqEdges']:
             
             # skip inner line, only consider sew line
-            if seg_edge['type'] != 3: continue
-            panel_corner_uvs.append(np.asarray(seg_edge['vertices'], dtype=np.float32))
+            if seq_edge['type'] != 3: continue
+            panel_corner_uvs.append(np.asarray(seq_edge['vertices'], dtype=np.float32))
 
             # processing edge
-            for edge in seg_edge['edges']:
+            for edge in seq_edge['edges']:
                 edge_samples = _sample_curve_points_2d(edge, reso)
 
                 edge_bbox = (np.min(edge_samples, axis=0)-5.0,

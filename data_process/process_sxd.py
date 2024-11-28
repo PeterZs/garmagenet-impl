@@ -304,6 +304,8 @@ def prepare_edge_data(
     faceEdge_adj = {}
 
     for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
+        if panel_id not in panel_data: continue
+        
         if panel_id not in faceEdge_adj: faceEdge_adj[panel_id] = []
         panel_faces = mesh_obj.cells[idx].data
         panel_spec = panel_data[panel_id]
@@ -419,8 +421,9 @@ def prepare_surf_data(
     start_idx = 0
     
     for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
-        panel_ids.append(panel_id)
+        if panel_id not in panel_data: print(f"\t Skipping panel {panel_id}"); continue
 
+        panel_ids.append(panel_id)
         panel_seg_id = panel_data[panel_id]['label'].strip()
         panel_seg_id = _PANEL_CLS.index(panel_seg_id) + 1 if panel_seg_id in _PANEL_CLS else 0.
         panel_cls.append(panel_seg_id)
@@ -690,20 +693,20 @@ def process_data(
 
 
 def process_item(data_idx, data_item, args, glctx):
-    try:
-        os.makedirs(args.output, exist_ok=True)
-        output_fp = os.path.join(args.output, '%05d.pkl' % (data_idx))    
+    # try:
+    os.makedirs(args.output, exist_ok=True)
+    output_fp = os.path.join(args.output, '%05d.pkl' % (data_idx))    
+    
+    result = process_data(
+        data_item, glctx=glctx, 
+        num_edge_samples=args.ne, 
+        num_surf_samples=args.nf)
+    
+    with open(output_fp, 'wb') as f: pickle.dump(result, f)
+    return True, data_item
         
-        result = process_data(
-            data_item, glctx=glctx, 
-            num_edge_samples=args.ne, 
-            num_surf_samples=args.nf)
-        
-        with open(output_fp, 'wb') as f: pickle.dump(result, f)
-        return True, data_item
-        
-    except Exception as e:
-        return False, f"{data_item} | [ERROR] {e}"
+    # except Exception as e:
+    #     return False, f"{data_item} | [ERROR] {e}"
 
 
 if __name__ == '__main__':

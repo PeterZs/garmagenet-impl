@@ -8,11 +8,10 @@ args = get_args_ldm()
 os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 
 # Make project directory if not exist
-if not os.path.exists(args.save_dir):
-    os.makedirs(args.save_dir)
+if not os.path.exists(args.save_dir): os.makedirs(args.save_dir)
 
-from src.dataset import *
-from trainer import *
+from .dataset import *
+from .trainer import *
 
 def run(args):
     # Initialize dataset and trainer

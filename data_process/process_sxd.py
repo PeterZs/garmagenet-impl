@@ -27,29 +27,30 @@ from geometry_utils.obj import read_obj  # type: ignore
 torch.set_grad_enabled(False)
 
 _CMAP = {
-    "帽": {"alias": "帽", "color": "#F7815D"},
-    "领": {"alias": "领", "color": "#F9D26D"},
-    "肩": {"alias": "肩", "color": "#F23434"},
-    "袖片": {"alias": "袖片", "color": "#C4DBBE"},
-    "袖口": {"alias": "袖口", "color": "#F0EDA8"},
-    "衣身前中": {"alias": "衣身前中", "color": "#8CA740"},
-    "衣身后中": {"alias": "衣身后中", "color": "#4087A7"},
-    "衣身侧": {"alias": "衣身侧", "color": "#DF7D7E"},
-    "底摆": {"alias": "底摆", "color": "#DACBBD"},
-    "腰头": {"alias": "腰头", "color": "#DABDD1"},
-    "裙前中": {"alias": "裙前中", "color": "#46B974"},
-    "裙后中": {"alias": "裙后中", "color": "#6B68F5"},
-    "裙侧": {"alias": "裙侧", "color": "#D37F50"},
+    "帽": {"alias": "hat", "color": "#F7815D"},
+    "领": {"alias": "collar", "color": "#F9D26D"},
+    "肩": {"alias": "stripe", "color": "#F23434"},
+    "袖片": {"alias": "sleeve", "color": "#C4DBBE"},
+    "袖口": {"alias": "cuff", "color": "#F0EDA8"},
+    "衣身前中": {"alias": "body_front", "color": "#8CA740"},
+    "衣身后中": {"alias": "body_back", "color": "#4087A7"},
+    "衣身侧": {"alias": "body_side", "color": "#DF7D7E"},
+    "底摆": {"alias": "hem", "color": "#DACBBD"},
+    "腰头": {"alias": "waistband", "color": "#DABDD1"},
+    "裙前中": {"alias": "skirt_front", "color": "#46B974"},
+    "裙后中": {"alias": "skirt_back", "color": "#6B68F5"},
+    "裙侧": {"alias": "skirt_side", "color": "#D37F50"},
 
-    "橡筋": {"alias": "橡筋", "color": "#696969"},
-    "木耳边": {"alias": "木耳边", "color": "#696969"},
-    "袖笼拼条": {"alias": "袖笼拼条", "color": "#696969"},
-    "荷叶边": {"alias": "荷叶边", "color": "#696969"},
-    "绑带": {"alias": "绑带", "color": "#696969"}
+    "橡筋": {"alias": "ruffles", "color": "#A8D4D2"},
+    "木耳边": {"alias": "ruffles", "color": "#A8D4D2"},
+    "袖笼拼条": {"alias": "ruffles", "color": "#A8D4D2"},
+    "荷叶边": {"alias": "ruffles", "color": "#A8D4D2"},
+    "绑带": {"alias": "ruffles", "color": "#A8D4D2"},
+    "口袋": {"alias": "pocket", "color": "#C9FF93"},
 }
 
 _PANEL_CLS = [
-    '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头', '裙前中', '裙后中', '裙侧', '橡筋', '木耳边', '袖笼拼条', '荷叶边', '绑带']
+    '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头', '裙前中', '裙后中', '裙侧', '橡筋', '木耳边', '袖笼拼条', '荷叶边', '绑带', '口袋']
 
 _PANEL_COLORS = np.array(
     [(0., 0., 0., 0.)] + [to_rgba(_CMAP[_PANEL_CLS[idx]]['color'])

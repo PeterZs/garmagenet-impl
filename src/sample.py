@@ -287,7 +287,8 @@ def sample(eval_args):
             edgeV = edgeZV[:,:,:,12:].detach().cpu().numpy()
 
             # Decode the surfaces
-            surf_ncs = surf_vae(surfZ.unflatten(-1,torch.Size([16,3])).flatten(0,1).permute(0,2,1).unflatten(-1,torch.Size([4,4])))
+            surf_ncs = surf_vae(
+                surfZ.unflatten(-1,torch.Size([16,3])).flatten(0,1).permute(0,2,1).unflatten(-1,torch.Size([4,4])))
             surf_ncs = surf_ncs.permute(0,2,3,1).unflatten(0, torch.Size([batch_size, num_surfaces])).detach().cpu().numpy()
             
             # Decode the edges

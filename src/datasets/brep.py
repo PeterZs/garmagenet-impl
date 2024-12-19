@@ -54,6 +54,8 @@ _PANEL_CLS = [
     '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头', 
     '裙前中', '裙后中', '裙侧', '橡筋', '木耳边', '袖笼拼条', '荷叶边', '绑带']
 
+
+
 def filter_data(data):
     """ 
     Helper function to check if a brep needs to be included

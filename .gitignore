@@ -3,6 +3,7 @@ log
 checkpoints
 results
 
+*.pkl
 *.pt
 
 # From: https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore

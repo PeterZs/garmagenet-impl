@@ -8,19 +8,25 @@ args = get_args_vae()
 os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 
 # Make project directory if not exist
-if not os.path.exists(args.save_dir):
-    os.makedirs(args.save_dir)
+if not os.path.exists(args.log_dir):
+    os.makedirs(args.log_dir)
 
 from trainer import SurfVAETrainer
-from datasets.brep import SurfData
+from datasets.sxd import SurfData
 from trainer import EdgeVAETrainer
-from datasets.brep import EdgeData
+from datasets.sxd import EdgeData
 
 def run(args):
+    print('Args:', args)
+    
     # Initialize dataset loader and trainer
     if args.option == 'surface':
-        train_dataset = SurfData(args.data, args.train_list, validate=False, aug=args.data_aug)
-        val_dataset = SurfData(args.data, args.val_list, validate=True, aug=False)
+        train_dataset = SurfData(
+            args.data, args.train_list, data_fields=args.data_fields, 
+            validate=False, aug=args.data_aug, chunk_size=args.chunksize)
+        val_dataset = SurfData(
+            args.data, args.val_list, data_fields=args.data_fields, 
+            validate=True, aug=False, chunk_size=args.chunksize)
         vae = SurfVAETrainer(args, train_dataset, val_dataset)
     else:
         assert args.option == 'edge', 'please choose between surface or edge'

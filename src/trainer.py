@@ -4,6 +4,8 @@ from tqdm import tqdm
 
 import torch
 import torch.nn as nn 
+from torchvision.utils import make_grid
+import torchvision.transforms.functional as F
 from diffusers import AutoencoderKL, DDPMScheduler
 from network import *
 
@@ -14,25 +16,47 @@ class SurfVAETrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model = AutoencoderKL(in_channels=3,
-            out_channels=3,
-            down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
-            up_block_types= ['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'],
-            block_out_channels=[128, 256, 512, 512],
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.batch_size = args.batch_size
+
+        assert train_dataset.num_channels == val_dataset.num_channels, \
+            'Expecting same dimensions for train and val dataset, got %d (train) and %d (val).'%(train_dataset.num_channels, val_dataset.num_channels)
+        
+        num_channels = train_dataset.num_channels
+        sample_size = train_dataset.resolution
+
+        model = AutoencoderKL(in_channels=num_channels,
+            out_channels=num_channels,
+            down_block_types=['DownEncoderBlock2D']*len(args.block_dims),
+            up_block_types= ['UpDecoderBlock2D']*len(args.block_dims),
+            block_out_channels=args.block_dims,
             layers_per_block=2,
             act_fn='silu',
-            latent_channels=3,
-            norm_num_groups=32,
-            sample_size=512,
+            latent_channels=8,
+            norm_num_groups=8,
+            sample_size=sample_size,
         )
+                
+        # model = AutoencoderKL(in_channels=num_channels,
+        #     out_channels=num_channels,
+        #     down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
+        #     up_block_types= ['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'],
+        #     block_out_channels=[16, 32, 32, 64, 64, 128],
+        #     layers_per_block=2,
+        #     act_fn='silu',
+        #     latent_channels=8,
+        #     norm_num_groups=8,
+        #     sample_size=sample_size,
+        # )
 
         # Load pretrained surface vae (fast encode version)
         if args.finetune:
             model.load_state_dict(torch.load(args.weight))
-
+            
         self.model = model.to(self.device).train()
 
         # Initialize optimizer
@@ -45,20 +69,20 @@ class SurfVAETrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=args.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
-        self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
+        self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, 
                                                 shuffle=True, 
-                                                batch_size=args.batch_size,
+                                                batch_size=self.batch_size,
                                                 num_workers=8)
-        self.val_dataloader = torch.utils.data.DataLoader(val_dataset, 
+        self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, 
                                              shuffle=False, 
-                                             batch_size=args.batch_size,
+                                             batch_size=self.batch_size,
                                              num_workers=8)
         return
     
-        
+    
     def train_one_epoch(self):
         """
         Train the model for one epoch
@@ -71,6 +95,7 @@ class SurfVAETrainer():
 
         # Train    
         for surf_uv in self.train_dataloader:
+                        
             with torch.cuda.amp.autocast():
                 surf_uv = surf_uv.to(self.device).permute(0,3,1,2)
                 self.optimizer.zero_grad() # zero gradient
@@ -99,7 +124,14 @@ class SurfVAETrainer():
             progress_bar.update(1)
 
         progress_bar.close()
+        
+        # update train dataset
+        self.train_dataset.update()
+        self.train_dataloader = torch.utils.data.DataLoader(
+            self.train_dataset, shuffle=True, batch_size=self.batch_size, num_workers=8)
+        
         self.epoch += 1 
+        
         return 
     
 
@@ -107,13 +139,17 @@ class SurfVAETrainer():
         """
         Test the model on validation set
         """
+        print('Running validation...')
         self.model.eval() # set to eval
         total_loss = 0
         total_count = 0
         mse_loss = nn.MSELoss(reduction='none')
+        
+        val_images = None
+        
         with torch.no_grad():
             for surf_uv in self.val_dataloader:
-                surf_uv = surf_uv.to(self.device).permute(0,3,1,2)
+                surf_uv = surf_uv.to(self.device).permute(0,3,1,2) # (N, H, W, C) => (N, C, H, W)
                 
                 posterior = self.model.encode(surf_uv).latent_dist
                 z = posterior.sample()
@@ -122,15 +158,30 @@ class SurfVAETrainer():
                 loss = mse_loss(dec, surf_uv).mean((1,2,3)).sum().item()
                 total_loss += loss
                 total_count += len(surf_uv)
-
+                
+                if val_images is None and dec.shape[0] > 16:
+                    sample_idx = torch.randperm(dec.shape[0])[:16]
+                    val_images = make_grid(dec[sample_idx, ...], nrow=8, normalize=True, value_range=(-1,1))
+                    geo_images = wandb.Image(val_images[:3, ...], caption="Geometry output.")
+                    uv_images = wandb.Image(val_images[-3:, ...], caption="UV output.")
+                    mask_image = wandb.Image(val_images[-1:, ...], caption="Mask output.")
+                    wandb.log({"Val-Geo": geo_images, "Val-UV": uv_images, "Val-Mask": mask_image}, step=self.iters)
+                
         mse = total_loss/total_count
         self.model.train() # set to train
         wandb.log({"Val-mse": mse}, step=self.iters)
+        
+        self.val_dataset.update()
+        self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, 
+                                             shuffle=False, 
+                                             batch_size=self.batch_size,
+                                             num_workers=8)    
+        
         return mse
     
-
+    
     def save_model(self):
-        torch.save(self.model.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
 
 
@@ -140,7 +191,7 @@ class EdgeVAETrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         model = AutoencoderKL1D(
@@ -172,7 +223,7 @@ class EdgeVAETrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=args.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
@@ -260,7 +311,7 @@ class EdgeVAETrainer():
     
 
     def save_model(self):
-        torch.save(self.model.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
     
 
@@ -270,7 +321,7 @@ class SurfPosTrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.use_cf = args.cf
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -305,7 +356,7 @@ class SurfPosTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=self.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=self.log_dir, name=args.expr)
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
@@ -409,7 +460,7 @@ class SurfPosTrainer():
     
 
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
 
 
@@ -419,7 +470,7 @@ class SurfZTrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.use_cf = args.cf
         self.z_scaled = args.z_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -471,7 +522,7 @@ class SurfZTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=args.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
@@ -605,7 +656,7 @@ class SurfZTrainer():
     
 
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
     
 
@@ -615,7 +666,7 @@ class EdgePosTrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.use_cf = args.cf
         self.z_scaled = args.z_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -667,7 +718,7 @@ class EdgePosTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=args.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
@@ -800,7 +851,7 @@ class EdgePosTrainer():
     
 
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
     
 
@@ -810,7 +861,7 @@ class EdgeZTrainer():
         # Initilize model and load to gpu
         self.iters = 0
         self.epoch = 0
-        self.save_dir = args.save_dir
+        self.log_dir = args.log_dir
         self.use_cf = args.cf
         self.z_scaled = args.z_scaled
         self.max_edge = args.max_edge
@@ -880,7 +931,7 @@ class EdgeZTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='BrepGen', dir=args.save_dir, name=args.env)
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
@@ -1028,6 +1079,6 @@ class EdgeZTrainer():
     
 
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.save_dir,'epoch_'+str(self.epoch)+'.pt'))
+        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
         return
 

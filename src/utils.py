@@ -146,31 +146,48 @@ def plot_3d_bbox(ax, min_corner, max_corner, color='r'):
     return
 
 
-def get_args_vae():
+def get_args_vae():    
+    
+    def _str2intlist(s): return list(map(int, s.split(',')))
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
+
+    # Dataset configuration
+    parser.add_argument('--data', type=str, default='/data/AIGP/brebrep_reso_64_edge_snap', 
                         help='Path to data folder')  
-    parser.add_argument('--train_list', type=str, default='data_process/deepcad_data_split_6bit_surface.pkl', 
+    parser.add_argument('--train_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
                         help='Path to training list')  
-    parser.add_argument('--val_list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
+    parser.add_argument('--val_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
                         help='Path to validation list')  
+    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
+    parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
+    parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
+
+    # Model parameters
+    parser.add_argument('--block_dims', type=_str2intlist, default="32,64,64,128", help='Latent dimension of each block of the UNet model.')
+    
     # Training parameters
     parser.add_argument("--option", type=str, choices=['surface', 'edge'], default='surface', 
                         help="Choose between option surface or edge (default: surface)")
-    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
-    parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')
-    parser.add_argument('--save_nepoch', type=int, default=20, help='number of epochs to save model')
-    parser.add_argument('--test_nepoch', type=int, default=10, help='number of epochs to test model')
-    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')  
     parser.add_argument("--gpu", type=int, nargs='+', default=[0], help="GPU IDs to use for training (default: [0])")
+    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')
+        
+    # Logging configuration
+    parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')    
+    parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
+    parser.add_argument('--test_nepoch', type=int, default=10, help='number of epochs to test model')
+
     # Save dirs and reload
-    parser.add_argument('--env', type=str, default="surface_vae", help='environment')
-    parser.add_argument('--dir_name', type=str, default="proj_log", help='name of the log folder.')
+    parser.add_argument('--expr', type=str, default="surface_vae", help='experiment name')
+    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
+
     args = parser.parse_args()
+    
     # saved folder
-    args.save_dir = f'{args.dir_name}/{args.env}'
+    args.log_dir = f'{args.log_dir}/{args.expr}'
+    
     return args
 
 
@@ -180,9 +197,9 @@ def get_args_ldm():
                         help='Path to data folder')  
     parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
                         help='Path to data list')  
-    parser.add_argument('--surfvae', type=str, default='proj_log/deepcad_surfvae/epoch_400.pt', 
+    parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
                         help='Path to pretrained surface vae weights')  
-    parser.add_argument('--edgevae', type=str, default='proj_log/deepcad_edgevae/epoch_300.pt', 
+    parser.add_argument('--edgevae', type=str, default='log/deepcad_edgevae/epoch_300.pt', 
                         help='Path to pretrained edge vae weights')  
     parser.add_argument("--option", type=str, choices=['surfpos', 'surfz', 'edgepos', 'edgez'], default='surfpos', 
                         help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
@@ -201,10 +218,10 @@ def get_args_ldm():
     parser.add_argument("--cf",  action='store_true', help='Use data augmentation')
     # Save dirs and reload
     parser.add_argument('--env', type=str, default="surface_pos", help='environment')
-    parser.add_argument('--dir_name', type=str, default="proj_log", help='name of the log folder.')
+    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
     args = parser.parse_args()
     # saved folder
-    args.save_dir = f'{args.dir_name}/{args.env}'
+    args.log_dir = f'{args.log_dir}/{args.expr}'
     return args
 
 

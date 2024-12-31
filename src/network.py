@@ -1101,9 +1101,7 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.p_dim),
         )
 
-        if self.use_cf: 
-            self.class_embed = Embedder(num_cf, self.embed_dim)
-            print(self.class_embed)
+        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
 
         return
 
@@ -1182,8 +1180,7 @@ class SurfZNet(nn.Module):
             nn.Linear(self.embed_dim, self.z_dim),
         )
 
-        if self.use_cf:
-            self.class_embed = Embedder(num_cf, self.embed_dim)
+        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
 
         return
 

@@ -2,6 +2,7 @@ resources
 log
 checkpoints
 results
+generated
 
 *.pkl
 *.pt

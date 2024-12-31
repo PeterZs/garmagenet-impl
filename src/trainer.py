@@ -112,7 +112,7 @@ class SurfVAETrainer():
 
             # logging
             if self.iters % 10 == 0:
-                wandb.log({"Loss-mse": mse_loss, "Loss-kl": kl_loss, "z_min": z.min(), "z_max": z.max()}, step=self.iters)
+                wandb.log({"loss-mse": mse_loss, "loss-kl": kl_loss, "z-min": z.min(), "z-max": z.max()}, step=self.iters)
 
             self.iters += 1
             progress_bar.update(1)
@@ -174,8 +174,11 @@ class SurfVAETrainer():
     
     
     def save_model(self):
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
-            self.model.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+            self.model.state_dict(), 
+            os.path.join(ckpt_log_dir, f'vae_e{self.epoch:4d}.pt'))
         return
     
     
@@ -332,9 +335,13 @@ class SurfPosTrainer():
         
         return
     
-
+    
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)
+        torch.save(
+            self.model.module.state_dict(), 
+            os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:4d}.pt'))
         return
 
 
@@ -504,10 +511,10 @@ class SurfZTrainer():
             # logging
             if self.iters % 10 == 0:
                 wandb.log({
-                    "Loss-noise": total_loss, "SurfZ-min": surfZ.min(), 
-                    "SurfZ-max": surfZ.max(), "SurfZ-std": surfZ.std(), 
-                    "surf_mask_min": surf_mask.sum(dim=1).min(), "surf_mask_max": surf_mask.sum(dim=1).max(), 
-                    "surfZ_pred-min": surfZ_pred.min(), 'surfZ_pred-max': surfZ_pred.max()
+                    "loss-noise": total_loss, "surfz-min": surfZ[~surf_mask].min(), 
+                    "surfz-max": surfZ[~surf_mask].max(), "surfz-std": surfZ[~surf_mask].std(), 
+                    "surf_mask-min": surf_mask.sum(dim=1).min(), "surf_mask-max": surf_mask.sum(dim=1).max(), 
+                    "surfZ_pred-min": surfZ_pred[~surf_mask].min(), 'surfz_pred-max': surfZ_pred[~surf_mask].max()
                     }, step=self.iters)
 
             self.iters += 1
@@ -537,7 +544,8 @@ class SurfZTrainer():
         progress_bar = tqdm(total=len(self.val_dataloader))
         progress_bar.set_description(f"Testing")
 
-        total_loss = [0]*6
+        val_timesteps = [10,50,100,200,500,1000]
+        total_loss = [0]*len(val_timesteps)
 
         vis_batch = torch.randint(0, len(self.val_dataloader), (1,)).item()        
         for batch_idx, data in enumerate(self.val_dataloader):
@@ -552,7 +560,7 @@ class SurfZTrainer():
 
             total_count += len(surfPos)
             
-            for idx, step in enumerate([10,50,100,200,500,1000]):
+            for idx, step in enumerate(val_timesteps):
                 # Evaluate at timestep 
                 timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
                 noise = torch.randn(tokens.shape).to(self.device)  
@@ -573,7 +581,7 @@ class SurfZTrainer():
 
         mse = [loss/total_count for loss in total_loss]
         self.model.train() # set to train
-        wandb.log({"Val-010": mse[0], "Val-050": mse[1], "Val-100": mse[2], "Val-200": mse[3], "Val-500": mse[4], "Val-1000": mse[5]}, step=self.iters)
+        wandb.log(dict([(f"val-{step:04d}", mse[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
         
         if len(self.val_dataset.data_chunks) > 1:
             self.val_dataset.update()
@@ -584,11 +592,13 @@ class SurfZTrainer():
     
 
     def save_model(self):
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)        
         torch.save(
             {
-                'model': self.model.module.state_dict(),
+                'model_state_dict': self.model.module.state_dict(),
                 'z_scale': self.z_scaled
             }, 
-            os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+            os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:4d}.pt'))
         return
     

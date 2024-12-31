@@ -16,6 +16,7 @@ def get_args_ldm():
                         help='Path to data folder')  
     parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
                         help='Path to data list')  
+    parser.add_argument('--cache_dir', type=str, default=None, help='Path to cached data (with latents).')
     parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
                         help='Path to pretrained surface vae weights')  
     parser.add_argument("--option", type=str, choices=['surfpos', 'surfz'], default='surfpos', 

@@ -23,6 +23,10 @@ def get_args_ldm():
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
     
     # Training parameters
+    parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
+    parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')
+    parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
+
     parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
     parser.add_argument('--train_nepoch', type=int, default=3000, help='number of epochs to train for')
     parser.add_argument('--test_nepoch', type=int, default=2, help='number of epochs to test model')
@@ -32,8 +36,7 @@ def get_args_ldm():
     parser.add_argument('--max_face', type=int, default=50, help='maximum number of faces')
     parser.add_argument('--threshold', type=float, default=0.01, help='minimum threshold between two faces')
     parser.add_argument('--bbox_scaled', type=float, default=1.0, help='scaled the bbox')
-    parser.add_argument('--z_scaled', type=float, default=1, help='scaled the latent z')
-    parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
+    parser.add_argument('--z_scaled', type=float, default=None, help='scaled the latent z')
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation.')
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
     parser.add_argument("--padding", default="zero", type=str, choices=['repeat', 'zero'])
@@ -67,7 +70,8 @@ def run(args):
             args.data, args.list, validate=False, aug=args.data_aug, 
             pad_mode=args.padding, args=args)
         val_dataset = SurfZData(
-            args.data, args.list, validate=True, aug=False, pad_mode=args.padding, args=args)
+            args.data, args.list, validate=True, aug=False, 
+            pad_mode=args.padding, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
         
 
@@ -98,7 +102,7 @@ if __name__ == "__main__":
     # Parse input augments
     args = get_args_ldm()
 
-    # Set PyTorch to use only the specified GPU
+    # # Set PyTorch to use only the specified GPU
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 
     # Make project directory if not exist

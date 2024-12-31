@@ -115,7 +115,7 @@ def pad_repeat(x, max_len):
     # return x_repeat
 
 
-def pad_zero(x, max_len, shuffle=True, return_mask=False):
+def pad_zero(x, max_len, shuffle=False, return_mask=False):
     
     if shuffle: x = x[np.random.permutation(x.shape[0]), :]
     

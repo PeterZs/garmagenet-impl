@@ -1134,14 +1134,14 @@ class SurfZNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
-    def __init__(self, p_dim=6, z_dim=3*16, embed_dim=768, num_cf=-1):
+    def __init__(self, p_dim=6, z_dim=3*4*4, embed_dim=768, num_heads=12, num_cf=-1):
         super(SurfZNet, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
         self.embed_dim = embed_dim
         self.use_cf = num_cf > 0
         
-        self.n_heads = 12
+        self.n_heads = num_heads
 
         layer = nn.TransformerEncoderLayer(
             d_model=self.embed_dim, 
@@ -1210,12 +1210,14 @@ class SurfZNet(nn.Module):
         else:
             tokens = z_embeds + p_embeds + time_embeds
 
-        # print('[MODEL] tokens: ', tokens.size())
-
         output = self.net(
             src=tokens.permute(1,0,2),
             src_key_padding_mask=surf_mask,
         ).transpose(0,1) 
+        
+        # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
+        # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
+        # print('[SurfZNet] output', output.size(), output.min(), output.max())
         
         pred = self.fc_out(output)
         return pred

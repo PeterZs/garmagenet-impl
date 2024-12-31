@@ -132,7 +132,7 @@ class SurfData(torch.utils.data.Dataset):
         
     def update(self): self._next_chunk(lazy=True)
     
-    def __len__(self): return len(self.cache) * 10
+    def __len__(self): return len(self.cache) * 32
     
     def __getitem__(self, index):
         return torch.FloatTensor(self.cache[index%len(self.cache)])
@@ -228,6 +228,7 @@ class SurfZData(torch.utils.data.Dataset):
         print('Loading %s data...'%('validation' if validate else 'training'))
         with open(input_list, 'rb') as f: self.data_list = pickle.load(f)['val' if self.validate else 'train']
         self.data_list = [x for x in self.data_list if os.path.exists(os.path.join(self.data_root, x))]
+        random.shuffle(self.data_list)
         print('Total items: ', len(self.data_list))
 
         # Config data chunks
@@ -237,19 +238,25 @@ class SurfZData(torch.utils.data.Dataset):
         self.data_chunks = [self.data_list[i:i+self.chunksize] for i in range(0, len(self.data_list), self.chunksize)]
         print('Data chunks: num_chunks=%d, chunksize=%d.'%(len(self.data_chunks), self.chunksize))
 
-        self.cache = {}
-        self._next_chunk(lazy=False)
+        # Init data dimension
+        if args.chunksize > 0: self._next_chunk(lazy=False)
+        else: self.__load_one__(self.data_list[0])
 
 
-    def __len__(self): return len(self.data_chunks[self.chunk_idx]) * 256
-
+    def __len__(self): 
+        # return len(self.data_list) * 5 if not self.validate else len(self.data_chunks[self.chunk_idx])
+        return len(self.data_list)
     
-    def init_encoder(self, z_encoder): 
+    def init_encoder(self, z_encoder, z_scale=None): 
         print("Init z_encoder...")
         self.z_encoder = z_encoder
-        if 'latent' not in self.cache: self.__encode_all__()
+        if z_scale is not None: self.z_scale = z_scale
+        if not hasattr(self, 'cache'): self.__load_and_encode_all__()
+        elif 'latent' not in self.cache: self.__encode_chunk__()
+        
         
     def update(self): self._next_chunk(lazy=True)
+
 
     def __load_one__(self, data_fp):
         
@@ -287,70 +294,75 @@ class SurfZData(torch.utils.data.Dataset):
             caption
         )         
 
-
     def __pad_raw__(self, surf_pos, surf_ncs, surf_cls):
-        n_surfs, n_pads = surf_pos.shape[0], self.max_face-surf_pos.shape[0]
-        
-        if self.padding == 'repeat':
-            pad_idx = torch.permute(torch.cat([
-                torch.arange(n_surfs), torch.randint(n_surfs, n_pads)
-                ], dim=0))
-            surf_pos, surf_ncs, surf_cls = surf_pos[pad_idx, ...], surf_ncs[pad_idx, ...], surf_cls[pad_idx, ...]
-            pad_mask = torch.rand(self.max_face) > 0.5
-        elif self.padding == 'zero':
-            # Zero-padding
-            pad_idx = torch.permute(torch.arange(self.max_face))
-            pad_mask = torch.cat([
-                torch.ones(n_surfs, dtype=bool), torch.zeros(n_pads, dtype=bool)
-            ], dim=0)[pad_idx]
-            surf_pos = torch.cat([
-                surf_pos, torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
-            ], dim=0)[pad_idx, ...]
-            surf_ncs = torch.cat([
-                surf_ncs, torch.zeros((n_pads, *surf_ncs.shape[1:]), dtype=surf_ncs.dtype, device=surf_ncs.device)
-            ], dim=0)[pad_idx, ...]
-            surf_cls = torch.cat([
-                surf_cls, torch.zeros((n_pads, *surf_cls.shape[1:]), dtype=surf_cls.dtype, device=surf_cls.device)-1
-            ], dim=0)[pad_idx, ...]
-        else:
-            pad_mask = torch.ones(self.max_face, dtype=bool)
-        
-        return surf_pos, surf_ncs, surf_cls, pad_mask
-        
-
-    def __pad_latents__(self, surf_pos, surf_latents, surf_cls):
-        
         n_surfs, n_pads = surf_pos.shape[0], self.max_face-surf_pos.shape[0]
         
         if self.padding == 'repeat':
             pad_idx = torch.cat([
                 torch.arange(n_surfs), torch.randint(0, n_surfs, (n_pads,))
                 ], dim=0)[torch.randperm(self.max_face)]
-            surf_pos, surf_latents, surf_cls = surf_pos[pad_idx, ...], surf_latents[pad_idx, ...], surf_cls[pad_idx, ...]
+            surf_pos, surf_ncs, surf_cls = surf_pos[pad_idx, ...], surf_ncs[pad_idx, ...], surf_cls[pad_idx, ...]
             pad_mask = torch.rand(self.max_face) > 0.5
         elif self.padding == 'zero':
             # Zero-padding
-            pad_idx = torch.randperm(self.max_face)
+            pad_idx = torch.randperm(n_surfs)
             pad_mask = torch.cat([
                 torch.ones(n_surfs, dtype=bool), torch.zeros(n_pads, dtype=bool)
-            ], dim=0)[pad_idx]
+            ], dim=0)
             surf_pos = torch.cat([
-                surf_pos, torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
-            ], dim=0)[pad_idx, ...]
-            surf_latents = torch.cat([
-                surf_latents, self.zero_latent.repeat((n_pads, 1))
-            ], dim=0)[pad_idx, ...]
+                surf_pos[pad_idx, ...], torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
+            ], dim=0)
+            surf_ncs = torch.cat([
+                surf_ncs[pad_idx, ...], torch.zeros((n_pads, *surf_ncs.shape[1:]), dtype=surf_ncs.dtype, device=surf_ncs.device)
+            ], dim=0)
             surf_cls = torch.cat([
-                surf_cls, torch.zeros((n_pads, *surf_cls.shape[1:]), dtype=surf_cls.dtype, device=surf_cls.device)-1
-            ], dim=0)[pad_idx, ...]
+                surf_cls[pad_idx, ...], torch.zeros((n_pads, *surf_cls.shape[1:]), dtype=surf_cls.dtype, device=surf_cls.device)-1
+            ], dim=0)
+        else:
+            pad_mask = torch.ones(self.max_face, dtype=bool)
+        
+        return surf_pos, surf_ncs, surf_cls, pad_mask
+        
+        
+    def __pad_latents__(self, surf_pos, surf_latents, surf_cls):
+        
+        n_surfs, n_pads = surf_pos.shape[0], self.max_face-surf_pos.shape[0]
+        
+        if self.padding == 'repeat':
+            rand_idx = torch.randperm(self.max_face)
+            pad_idx = torch.randint(0, n_surfs, (n_pads,))
+
+            surf_pos = torch.cat([surf_pos, surf_pos[pad_idx, ...]], dim=0)[rand_idx, ...]
+            surf_latents = torch.cat([surf_latents, surf_latents[pad_idx, ...]], dim=0)[rand_idx, ...]
+            surf_cls = torch.cat([surf_cls, surf_cls[pad_idx, ...]], dim=0)[rand_idx, ...]
+            # pad_mask = torch.rand(self.max_face) > 0.375
+            # pad_mask = torch.cat([torch.rand(n_pads) > 0.15, torch.rand(n_pads) > 0.625], dim=0)[rand_idx, ...]
+            pad_mask = torch.cat([torch.ones(n_surfs, dtype=bool), torch.zeros(n_pads, dtype=bool)], dim=0)
+            
+        elif self.padding == 'zero':
+            # Zero-padding
+            pad_idx = torch.randperm(n_surfs)
+            pad_mask = torch.cat([
+                torch.ones(n_surfs, dtype=bool), torch.zeros(n_pads, dtype=bool)
+            ], dim=0)
+            surf_pos = torch.cat([
+                surf_pos[pad_idx, ...], torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
+            ], dim=0)
+            surf_latents = torch.cat([
+                surf_latents[pad_idx, ...], torch.zeros((n_pads, *surf_latents.shape[1:]), dtype=surf_latents.dtype, device=surf_latents.device)
+            ], dim=0)
+            surf_cls = torch.cat([
+                surf_cls[pad_idx, ...], torch.zeros((n_pads, *surf_cls.shape[1:]), dtype=surf_cls.dtype, device=surf_cls.device)-1
+            ], dim=0)
         else:
             pad_mask = torch.ones(self.max_face, dtype=bool)
             
-        
         return surf_pos, surf_latents, surf_cls, pad_mask
         
-
-    def __encode_all__(self):
+    def __encode_chunk__(self):
+        
+        print('Encode chunk [%03d/%03d]: '%(self.chunk_idx, len(self.data_chunks)), self.cache['surf_pos'].shape)
+        
         if not (hasattr(self, 'z_encoder') and self.z_encoder is not None): return
 
         try:
@@ -372,11 +384,83 @@ class SurfZData(torch.utils.data.Dataset):
                 _surf_latents.append(z.flatten(start_dim=1))
                 
         self.cache['latent'] = torch.cat(_surf_latents, dim=0).detach().cpu()        
-        del self.cache['surf_ncs']
-        
-        print('Encode all data: ', self.cache['latent'].shape, self.cache.keys())
+        del self.cache['surf_ncs']        
 
+        if not hasattr(self, 'z_scale'): 
+            self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
+            print("Initialize z_scale: ", self.z_scale)
+    
+        print('Encode all data: ', self.cache['latent'].shape, self.cache.keys())
         
+        
+    def __load_and_encode_all__(self):
+        
+        cache_fp = 'cache_%s.pkl'%('validate' if self.validate else 'train')
+        if os.path.exists(cache_fp): 
+            with open(cache_fp, 'rb') as f: self.cache = pickle.load(f)
+            if not hasattr(self, 'z_scale'): self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
+            print('Load cache from %s: '%(cache_fp), self.cache['surf_pos'].shape, self.cache['latent'].shape, ' z_scale: ', self.z_scale)
+            return
+        
+        print('Encoding all items ...')
+        
+        if not (hasattr(self, 'z_encoder') and self.z_encoder is not None): return
+
+        try:
+            z_device = self.z_encoder.module.parameters().__next__().device
+        except:
+            z_device = self.z_encoder.parameters().__next__().device  
+        
+        cache = {
+            'surf_pos': [], 
+            'latent': [], 
+            'surf_cls': [], 
+            'caption': [],
+            'item_idx': []  # start and end index of each item in the cache
+            }
+        
+        start_idx, end_idx = 0, 0
+        for data_id in tqdm(self.data_list):
+            data_fp = os.path.join(self.data_root, data_id)
+            
+            try:
+                surf_pos, surf_ncs, surf_cls, caption = self.__load_one__(data_fp)
+                
+                start_idx = end_idx
+                end_idx = start_idx + surf_pos.shape[0]
+                
+                cache['surf_pos'].append(surf_pos)
+                cache['surf_cls'].append(surf_cls)
+                cache['caption'].append(caption)
+                cache['item_idx'].append((start_idx, end_idx))
+                
+                # Encode surf_ncs
+                with torch.no_grad():
+                    z = self.z_encoder(surf_ncs.permute(0, 3, 1, 2).to(z_device)).flatten(start_dim=1)
+                cache['latent'].append(z.detach().cpu())
+                
+            except Exception as e:
+                print(f"Error loading {data_fp}: {e}")
+                continue
+
+        cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
+        cache['latent'] = torch.cat(cache['latent'], dim=0)
+        cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
+        
+        self.cache = cache
+        
+        with open(cache_fp, 'wb') as f: pickle.dump(cache, f)
+        
+        if not hasattr(self, 'z_scale'): 
+            self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
+            print("Initialize z_scale: ", self.z_scale)
+            
+        del self.z_encoder
+        torch.cuda.empty_cache()
+
+        print('Encode all data: ', self.cache['latent'].shape, self.cache['surf_pos'].shape)
+
+
     def _next_chunk(self, lazy=False):
         
         if lazy and np.random.rand() < 0.5: return
@@ -386,7 +470,8 @@ class SurfZData(torch.utils.data.Dataset):
         else: self.chunk_idx = chunk_idx
         print('Switching to chunk %d/%d'%(self.chunk_idx, len(self.data_chunks)))
         
-        del self.cache
+        if hasattr(self, 'cache'): del self.cache
+        torch.cuda.empty_cache()
         
         cache = {
             'surf_pos': [], 
@@ -400,31 +485,32 @@ class SurfZData(torch.utils.data.Dataset):
         for uid in tqdm(self.data_chunks[self.chunk_idx]):
             data_fp = os.path.join(self.data_root, uid)
 
-            # try:
-            surf_pos, surf_ncs, surf_cls, caption = self.__load_one__(data_fp)
-            start_idx = end_idx
-            end_idx = start_idx + surf_pos.shape[0]
-            cache['surf_pos'].append(surf_pos)
-            cache['surf_ncs'].append(surf_ncs)
-            cache['surf_cls'].append(surf_cls)
-            cache['caption'].append(caption)
-            cache['item_idx'].append((start_idx, end_idx))
-            
-            # except Exception as e:
-            #     print(f"Error loading {data_fp}: {e}")
-            #     continue
+            try:
+                surf_pos, surf_ncs, surf_cls, caption = self.__load_one__(data_fp)
+                
+                start_idx = end_idx
+                end_idx = start_idx + surf_pos.shape[0]
+                
+                cache['surf_pos'].append(surf_pos)
+                cache['surf_ncs'].append(surf_ncs)
+                cache['surf_cls'].append(surf_cls)
+                cache['caption'].append(caption)
+                cache['item_idx'].append((start_idx, end_idx))
+                
+            except Exception as e:
+                print(f"Error loading {data_fp}: {e}")
+                continue
         
         cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
         cache['surf_ncs'] = torch.cat(cache['surf_ncs'], dim=0)
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
                 
         self.cache = cache
-        self.__encode_all__()
+        self.__encode_chunk__()
         
         print('Load chunk [%03d/%03d]: '%(self.chunk_idx, len(self.data_chunks)))
-        for key in self.cache.keys(): print(key, self.cache[key].shape \
-            if torch.is_tensor(self.cache[key]) else len(self.cache[key]))
         
+        return cache
         
     def __getitem__(self, index):
         

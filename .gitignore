@@ -4,6 +4,7 @@ checkpoints
 results
 generated
 thirdparty
+generated
 
 *.pkl
 *.pt

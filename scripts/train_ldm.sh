@@ -15,6 +15,7 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs caption
 
 
+
 ### StyleXD - SurfZ
 CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \

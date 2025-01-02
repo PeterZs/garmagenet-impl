@@ -197,6 +197,8 @@ class SurfPosTrainer():
         self.use_cf = args.use_cf
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        self.bbox_scaled = train_dataset.bbox_scaled
+
         # Initialize network
         model = SurfPosNet(self.use_cf)
         model = nn.DataParallel(model) # distributed training 
@@ -344,9 +346,10 @@ class SurfPosTrainer():
     def save_model(self):
         ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
         os.makedirs(ckpt_log_dir, exist_ok=True)
-        torch.save(
-            self.model.module.state_dict(), 
-            os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:4d}.pt'))
+        torch.save({
+            'model_state_dict': self.model.module.state_dict(),
+            'bbox_scale': self.train_dataset.bbox_scaled
+        }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:4d}.pt'))
         return
 
 

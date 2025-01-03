@@ -528,6 +528,7 @@ class SurfZTrainer():
             if self.iters % 10 == 0:
                 wandb.log({
                     "loss-noise": total_loss, "surfz-min": surfZ[~surf_mask].min(), 
+                    'z_scale': self.z_scaled,
                     "surfz-max": surfZ[~surf_mask].max(), "surfz-std": surfZ[~surf_mask].std(), 
                     "surf_mask-min": surf_mask.sum(dim=1).min(), "surf_mask-max": surf_mask.sum(dim=1).max(), 
                     "surfZ_pred-min": surfZ_pred[~surf_mask].min(), 'surfz_pred-max': surfZ_pred[~surf_mask].max()

@@ -175,7 +175,7 @@ def draw_bbox_geometry(
     camera = dict(
         up=dict(x=0, y=1, z=0),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=-1.0, y=0, z=2.0)
+        eye=dict(x=-1.0, y=0, z=2.5)
     )
 
     # Update layout

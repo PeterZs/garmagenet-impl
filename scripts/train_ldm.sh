@@ -27,26 +27,14 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
 
 
 ### StyleXD - SurfZ
-CUDA_VISIBLE_DEVICES=0,1 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
-    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
-    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800/encoder_mode \
-    --expr stylexd_surfz_xyzuv_pad_zero_z_scale_1.0 --train_nepoch 500000 --test_nepoch 500 --save_nepoch 1000 \
-    --batch_size 3072 --chunksize -1 --padding zero --z_scaled 1.0 --bbox_scaled 1.0 \
-    --block_dims 16 32 32 64 64 128 --max_face 32 --sample_mode mode \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
-    --finetune --weight log/stylexd_surfz_xyzuv_pad_zero_z_scale_1.0/ckpts/surfz_e50000.pt
-    
-
-CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
     --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e550.pt \
     --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
-    --expr stylexd_surfz_xyzuv_mask_latent1_mode --train_nepoch 1000000 --test_nepoch 500 --save_nepoch 5000 \
-    --batch_size 4096 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --expr stylexd_surfz_xyzuv_mask_latent1_mode_with_caption --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 1024 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 --text_encoder CLIP \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
-
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption
 
 
 CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \

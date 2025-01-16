@@ -14,6 +14,7 @@ from diffusers.models.autoencoders.vae import Decoder, DecoderOutput, DiagonalGa
 from diffusers.models.unets.unet_1d_blocks import ResConvBlock, SelfAttention1d, get_down_block, get_up_block, Upsample1d
 from diffusers.models.attention_processor import SpatialNorm
 
+from typing import Any, Callable, Dict, List, Optional, Union
 
 def sincos_embedding(input, dim, max_period=10000):
     """
@@ -1072,6 +1073,121 @@ class AutoencoderKLFastDecode(ModelMixin, ConfigMixin):
         return decoded    
 
 
+class TextEncoder:
+    def __init__(self, encoder='CLIP', device='cuda'):
+
+        self.device = device
+
+        if encoder == 'T5':
+            import transformers
+            self.tokenizer = transformers.T5TokenizerFast.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer_2')
+            text_encoder = transformers.T5EncoderModel.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder_2')
+            self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
+            self.text_emb_dim = 4096
+            self.text_embedder_fn = self._get_t5_text_embeds
+        elif encoder == 'CLIP':
+            import transformers
+            self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer')
+            text_encoder = transformers.CLIPTextModel.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder')
+            self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
+            self.text_emb_dim = 768
+            self.text_embedder_fn = self._get_clip_text_embeds
+        elif encoder == 'GME':
+            from gme_inference import GmeQwen2VL
+            self.text_embedder_fn = self._get_gme_text_embeds
+            self.gme = GmeQwen2VL(model_path='/data/lry/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
+            self.text_emb_dim = 1536
+        else:
+            raise ValueError(f'Unsupported encoder {encoder}.')
+        
+        # Test encoding text
+        print(f"[DONE] Init {encoder} text encoder.")
+
+
+    def _get_gme_text_embeds(
+        self,
+        prompt: Union[str, List[str]] = None,
+        max_sequence_length: int = 310
+    ):        
+        assert hasattr(self, 'gme'), "Must initialize GME model before use."
+
+        prompt_embeds = self.gme.get_text_embeddings(texts=prompt)
+                
+        return prompt_embeds
+        
+    
+    def _get_t5_text_embeds(
+        self,
+        prompt: Union[str, List[str]] = None,
+        max_sequence_length: int = 16
+    ):
+        if not prompt or not prompt[0]: return None
+        if not hasattr(self, 'tokenizer'): return None
+        if not hasattr(self, 'text_encoder'): return None
+                
+        prompt = [prompt] if isinstance(prompt, str) else prompt
+        batch_size = len(prompt)
+
+        with torch.no_grad():
+            text_inputs = self.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=max_sequence_length,
+                truncation=True,
+                return_length=False,
+                return_overflowing_tokens=False,
+                return_tensors="pt",
+            )
+            
+            text_input_ids = text_inputs.input_ids
+            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=True).last_hidden_state[0]
+            _, seq_len, _ = prompt_embeds.shape
+
+        return prompt_embeds
+    
+    
+    def _get_clip_text_embeds(
+        self,
+        prompt: Union[str, List[str]],
+        max_sequence_length: int = 16
+    ):
+
+        with torch.no_grad():
+            prompt = [prompt] if isinstance(prompt, str) else prompt
+            batch_size = len(prompt)
+
+            text_inputs = self.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=max_sequence_length,
+                truncation=True,
+                return_overflowing_tokens=False,
+                return_length=False,
+                return_tensors="pt",
+            )
+
+            text_input_ids = text_inputs.input_ids
+            untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
+            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
+                removed_text = self.tokenizer.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
+            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=False)
+
+            # Use pooled output of CLIPTextModel
+            prompt_embeds = prompt_embeds.pooler_output
+            prompt_embeds = prompt_embeds.to(self.device)
+            
+            # print("*** CLIP prompt_embeds: ", prompt_embeds.shape, prompt_embeds.min(), prompt_embeds.max())
+
+        return prompt_embeds
+
+    def __call__(self, prompt):
+        return self.text_embedder_fn(prompt)
+
+
 class SurfPosNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
@@ -1104,7 +1220,6 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
         
-        print('*** num_cf: ', num_cf)
         if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
         if self.condition_dim > 0: self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
         
@@ -1152,13 +1267,14 @@ class SurfZNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
-    def __init__(self, p_dim=6, z_dim=3*4*4, embed_dim=768, num_heads=12, num_cf=-1):
+    def __init__(self, p_dim=6, z_dim=3*4*4, embed_dim=768, num_heads=12, condition_dim=-1, num_cf=-1):
         super(SurfZNet, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
         self.embed_dim = embed_dim
+        self.condition_dim = condition_dim
+
         self.use_cf = num_cf > 0
-        
         self.n_heads = num_heads
 
         layer = nn.TransformerEncoderLayer(
@@ -1193,6 +1309,9 @@ class SurfZNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
+        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
+        if self.condition_dim > 0: self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
+
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
@@ -1200,41 +1319,35 @@ class SurfZNet(nn.Module):
             nn.Linear(self.embed_dim, self.z_dim),
         )
 
-        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-
         return
 
        
-    def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, is_train=False):
+    def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
         """ forward pass """
         bsz = timesteps.size(0)
 
-        # print('[MODEL] surfZ', surfZ.size())
-        # print('[MODEL] timesteps', timesteps.size())
-        # print('[MODEL] surfPos', surfPos.size())
-        
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1) 
         z_embeds = self.z_embed(surfZ) 
         p_embeds = self.p_embed(surfPos)
 
-        if self.use_cf:  # classifier-free
+        tokens = z_embeds + p_embeds + time_embeds
+
+        if self.use_cf and class_label is not None:  # classifier-free
             if is_train:
-                # randomly set 10% to uncond label
-                uncond_mask = torch.rand(bsz,1) <= 0.1  
+                uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1  
                 class_label[uncond_mask] = 0
-            c_embeds = self.class_embed(class_label) 
-            tokens = z_embeds + p_embeds + time_embeds + c_embeds
-        else:
-            tokens = z_embeds + p_embeds + time_embeds
+            c_embeds = self.class_embed(class_label.squeeze(-1)) 
+            tokens += c_embeds            
+            
+        if self.condition_dim > 0 and condition is not None:
+            cond_token = self.cond_embed(condition)
+            if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
+            else: tokens = torch.cat([cond_embeds, tokens], dim=1)
 
         output = self.net(
             src=tokens.permute(1,0,2),
             src_key_padding_mask=surf_mask,
         ).transpose(0,1) 
-        
-        # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
-        # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-        print('[SurfZNet] output', output.size(), output.min(), output.max())
-        
+                
         pred = self.fc_out(output)
         return pred

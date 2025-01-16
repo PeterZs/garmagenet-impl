@@ -211,13 +211,13 @@ class SurfPosTrainer():
         self.bbox_scaled = args.bbox_scaled
 
         # Initialize text encoder
-        if args.text_encoder is not None: self.build_encoder(args.text_encoder)
+        if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
 
         # Initialize network
         self.pos_dim = train_dataset.pos_dim
         model = SurfPosNet(
             p_dim=self.pos_dim*2, 
-            condition_dim=self.text_emb_dim if hasattr(self, 'text_emb_dim') else -1,
+            condition_dim=self.text_encoder.text_emb_dim if hasattr(self, 'text_encoder') else -1,
             num_cf=train_dataset.num_classes)
         
         if args.finetune:
@@ -270,113 +270,6 @@ class SurfPosTrainer():
         
         return
     
-    def _get_gme_text_embeds(
-        self,
-        prompt: Union[str, List[str]] = None,
-        max_sequence_length: int = 310
-    ):        
-        assert hasattr(self, 'gme'), "Must initialize GME model before use."
-                
-        prompt_embeds = self.gme.get_text_embeddings(texts=prompt)
-                
-        return prompt_embeds
-        
-    
-    def _get_t5_text_embeds(
-        self,
-        prompt: Union[str, List[str]] = None,
-        max_sequence_length: int = 16
-    ):
-        if not prompt or not prompt[0]: return None
-        if not hasattr(self, 'tokenizer'): return None
-        if not hasattr(self, 'text_encoder'): return None
-                
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        batch_size = len(prompt)
-
-        with torch.no_grad():
-            text_inputs = self.tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=max_sequence_length,
-                truncation=True,
-                return_length=False,
-                return_overflowing_tokens=False,
-                return_tensors="pt",
-            )
-            
-            text_input_ids = text_inputs.input_ids
-            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=True).last_hidden_state[0]
-            _, seq_len, _ = prompt_embeds.shape
-
-        return prompt_embeds
-    
-    
-    def _get_clip_text_embeds(
-        self,
-        prompt: Union[str, List[str]],
-        max_sequence_length: int = 16
-    ):
-
-        with torch.no_grad():
-            prompt = [prompt] if isinstance(prompt, str) else prompt
-            batch_size = len(prompt)
-
-            text_inputs = self.tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=max_sequence_length,
-                truncation=True,
-                return_overflowing_tokens=False,
-                return_length=False,
-                return_tensors="pt",
-            )
-
-            text_input_ids = text_inputs.input_ids
-            untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
-            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
-                removed_text = self.tokenizer.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
-            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=False)
-
-            # Use pooled output of CLIPTextModel
-            prompt_embeds = prompt_embeds.pooler_output
-            prompt_embeds = prompt_embeds.to(self.device)
-            
-            # print("*** CLIP prompt_embeds: ", prompt_embeds.shape, prompt_embeds.min(), prompt_embeds.max())
-
-        return prompt_embeds
-    
-
-    def build_encoder(self, encoder='T5'):
-        if encoder == 'T5':
-            import transformers
-            self.tokenizer = transformers.T5TokenizerFast.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer_2')
-            text_encoder = transformers.T5EncoderModel.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder_2')
-            self.text_encoder = nn.DataParallel(text_encoder).to(self.device).eval()
-            self.text_emb_dim = 4096
-            self.text_embedder_fn = self._get_t5_text_embeds
-        elif encoder == 'CLIP':
-            import transformers
-            self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer')
-            text_encoder = transformers.CLIPTextModel.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder')
-            self.text_encoder = nn.DataParallel(text_encoder).to(self.device).eval()
-            self.text_emb_dim = 768
-            self.text_embedder_fn = self._get_clip_text_embeds
-        elif encoder == 'GME':
-            from gme_inference import GmeQwen2VL
-            self.text_embedder_fn = self._get_gme_text_embeds
-            self.gme = GmeQwen2VL(model_path='/data/lry/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
-            self.text_emb_dim = 1536
-        else:
-            raise ValueError(f'Unsupported encoder {encoder}.')
-        
-        # Test encoding text
-        print(f"[DONE] Init {encoder} text encoder.")
-    
     
     def train_one_epoch(self):
         """
@@ -396,8 +289,8 @@ class SurfPosTrainer():
                 surfPos = surfPos.to(self.device)
                 class_label = class_label.to(self.device)                
                 
-                text_emb = self.text_embedder_fn(caption) if \
-                    caption and hasattr(self, 'text_embedder_fn') else None
+                text_emb = self.text_encoder(caption) if \
+                    caption and hasattr(self, 'text_encoder') else None
 
                 bsz = len(surfPos)
                 
@@ -445,8 +338,8 @@ class SurfPosTrainer():
             surfPos = surfPos.to(self.device)
             class_label = class_label.to(self.device) 
             
-            text_emb = self.text_embedder_fn(caption) if \
-                caption and hasattr(self, 'text_embedder_fn') else None
+            text_emb = self.text_encoder(caption) if \
+                caption and hasattr(self, 'text_encoder') else None
             bsz = len(surfPos)
             total_count += len(surfPos)
             
@@ -495,8 +388,7 @@ class SurfZTrainer():
         self.z_scaled = args.z_scaled
         self.bbox_scaled = args.bbox_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-                
+         
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.batch_size = args.batch_size
@@ -507,6 +399,9 @@ class SurfZTrainer():
         self.latent_channels = args.latent_channels
         self.block_dims = args.block_dims
                  
+        # Initialize text encoder
+        if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
+
         # Load pretrained surface vae (fast encode version)
         surf_vae_encoder = AutoencoderKLFastEncode(
             in_channels=self.num_channels,
@@ -536,6 +431,7 @@ class SurfZTrainer():
             p_dim=self.pos_dim*2,
             z_dim=(self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels,
             num_heads=12,
+            condition_dim=self.text_encoder.text_emb_dim if hasattr(self, 'text_encoder') else -1,
             num_cf=train_dataset.num_classes
             )
         
@@ -626,13 +522,17 @@ class SurfZTrainer():
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 
+                # encode text
+                text_emb = self.text_encoder(caption) if \
+                    caption and hasattr(self, 'text_encoder') else None
+
                 # Add noise
                 timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
                 surfZ_noise = torch.randn(surfZ.shape).to(self.device)  
                 surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
                 
                 # Predict noise
-                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, True)
+                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, text_emb, is_train=True)
 
                 # Loss
                 total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])        
@@ -690,6 +590,10 @@ class SurfZTrainer():
                 surfPos.to(self.device), surfZ.to(self.device), \
                 surf_mask.to(self.device), surf_cls.to(self.device)
             
+            # encode text
+            text_emb = self.text_encoder(caption) if \
+                caption and hasattr(self, 'text_encoder') else None
+
             bsz = len(surfPos)
                         
             tokens = surfZ = surfZ * self.z_scaled    
@@ -702,7 +606,7 @@ class SurfZTrainer():
                 noise = torch.randn(tokens.shape).to(self.device)  
                 diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
                 
-                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls)
+                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls, text_emb)
                     
                 loss = mse_loss(pred[~surf_mask], noise[~surf_mask]).mean(-1).sum().item()
                 total_loss[idx] += loss

@@ -640,6 +640,17 @@ class SurfZData(torch.utils.data.Dataset):
         
         surf_pos, surf_latents, surf_cls, pad_mask = self.__pad_latents__(
             surf_pos, surf_latents, surf_cls)
+
+        if caption:
+            caption = [x.strip().lower() for x in caption.split(',')]
+            random.shuffle(caption)
+            if np.random.rand() > 0.5:
+                rand_length = random.randint(len(caption)-4, len(caption))
+                caption = caption[:max(2, rand_length)]
+                if 'dress' not in caption:
+                    caption.append('dress')
+                    random.shuffle(caption)
+            caption = ', '.join(caption)
                 
         return (
             surf_pos, surf_latents, pad_mask, surf_cls, caption

@@ -1156,6 +1156,8 @@ class TextEncoder:
         max_sequence_length: int = 16
     ):
 
+        # print('*** [Text Encoder] prompt = ', prompt)
+
         with torch.no_grad():
             prompt = [prompt] if isinstance(prompt, str) else prompt
             batch_size = len(prompt)
@@ -1252,6 +1254,7 @@ class SurfPosNet(nn.Module):
             tokens += c_embeds            
             
         if self.condition_dim > 0 and condition is not None:
+
             cond_token = self.cond_embed(condition)
             if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
             else: tokens = torch.cat([tokens, cond_embeds], dim=1)
@@ -1310,8 +1313,14 @@ class SurfZNet(nn.Module):
         )
 
         if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-        if self.condition_dim > 0: self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
-
+        if self.condition_dim > 0: 
+            self.cond_embed = nn.Sequential(
+                nn.Linear(self.condition_dim, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                nn.SiLU(),
+                nn.Linear(self.embed_dim, self.embed_dim),
+            ) 
+            
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),

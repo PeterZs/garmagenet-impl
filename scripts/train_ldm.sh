@@ -21,17 +21,27 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfpos \
     --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
     --padding repeat --text_encoder CLIP \
-    --expr stylexd_surfpos_xyzuv_pad_repeat_cond_clip --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
-    --batch_size 2048 --max_face 32 --bbox_scaled 1.0 \
+    --expr stylexd_surfpos_xyzuv_pad_repeat_cond_clip_debug_1 --train_nepoch 5 --test_nepoch 2 --save_nepoch 3 \
+    --batch_size 4 --max_face 32 --bbox_scaled 1.0 \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs caption
 
 
 ### StyleXD - SurfZ
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e550.pt \
-    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
-    --expr stylexd_surfz_xyzuv_mask_latent1_mode_with_caption --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e800/encoder_mode \
+    --expr stylexd_surfz_xyzuv_mask_latent1_mode_with_caption --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 2048 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 --text_encoder CLIP \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption
+
+
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e800/encoder_mode \
+    --expr stylexd_surfz_xyzuv_mask_latent1_mode_with_caption_test --train_nepoch 10 --test_nepoch 5 --save_nepoch 10 \
     --batch_size 1024 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 --text_encoder CLIP \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption

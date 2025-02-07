@@ -137,7 +137,7 @@ class SurfData(torch.utils.data.Dataset):
         
     def update(self): self.__next_chunk__(lazy=True)
     
-    def __len__(self): return len(self.cache) * 32
+    def __len__(self): return len(self.cache) * 8
     
     def __getitem__(self, index):
         return torch.FloatTensor(self.cache[index%len(self.cache)])
@@ -295,11 +295,9 @@ class SurfPosData(torch.utils.data.Dataset):
             caption = [x.strip().lower() for x in caption.split(',')]
             random.shuffle(caption)
             if np.random.rand() > 0.5:
-                rand_length = random.randint(len(caption)-4, len(caption))
+                rand_length = random.randint(max(0, len(caption)-4), len(caption))
                 caption = caption[:max(2, rand_length)]
-                if 'dress' not in caption:
-                    caption.append('dress')
-                    random.shuffle(caption)
+                
             caption = ', '.join(caption)
                     
         return (surf_pos, pad_mask, surf_cls, caption)
@@ -649,16 +647,17 @@ class SurfZData(torch.utils.data.Dataset):
             surf_pos, surf_latents, surf_cls)
 
         if caption:
-            caption = [x.strip().lower() for x in caption.split(',')]
+            # print('*** original caption: ', caption)
+            caption = [x.strip().lower() for x in caption.split(',') if x.strip().lower() != 'dress']
             random.shuffle(caption)
             if np.random.rand() > 0.5:
-                rand_length = random.randint(len(caption)-4, len(caption))
-                caption = caption[:max(2, rand_length)]
-                if 'dress' not in caption:
-                    caption.append('dress')
-                    random.shuffle(caption)
+                if len(caption) > 4: caption=caption[:random.randint(4, len(caption))]
+                if 'dress' not in caption: caption.insert(0, 'dress')
+
             caption = ', '.join(caption)
-                
+        
+            # print('*** new caption: ', caption)
+
         return (
             surf_pos, surf_latents, pad_mask, surf_cls, caption
         )

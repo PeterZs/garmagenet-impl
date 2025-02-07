@@ -10,11 +10,10 @@ python src/vae.py --data /data/AIGP/brep_reso_64_edge_snap \
 
 python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl \
-    --expr stylexd_vae_surf_256_xyz_nrm_mask_unet6_latent_3 \
-    --batch_size 128 --block_dims 16 32 32 64 64 128 --latent_channels 3 \
-    --test_nepoch 10 --save_nepoch 50 --train_nepoch 8000 \
+    --expr stylexd_vae_surf_256_xyz_nrm_mask_unet6_latent_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 2000 \
     --data_fields surf_ncs surf_normals surf_mask --chunksize 512
-
 
 python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap \
     --train_list data_process/stylexd_data_split_reso_256.pkl \

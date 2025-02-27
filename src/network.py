@@ -1097,7 +1097,7 @@ class TextEncoder:
             self.text_emb_dim = 768
             self.text_embedder_fn = self._get_clip_text_embeds
         elif encoder == 'GME':
-            from gme_inference import GmeQwen2VL
+            from llm_utils.gme_inference import GmeQwen2VL
             self.text_embedder_fn = self._get_gme_text_embeds
             self.gme = GmeQwen2VL(model_path='/data/lry/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
             self.text_emb_dim = 1536

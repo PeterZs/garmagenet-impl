@@ -1242,7 +1242,7 @@ class SurfPosNet(nn.Module):
         
         bsz = timesteps.size(0)
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
-        p_embeds = self.p_embed(surfPos)
+        p_embeds = self.p_embed(surfPos)   
         
         tokens = p_embeds + time_embeds
                     
@@ -1254,7 +1254,6 @@ class SurfPosNet(nn.Module):
             tokens += c_embeds            
             
         if self.condition_dim > 0 and condition is not None:
-
             cond_token = self.cond_embed(condition)
             if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
             else: tokens = torch.cat([tokens, cond_embeds], dim=1)

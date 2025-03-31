@@ -30,19 +30,6 @@ def _denormalize_pts(pts, bbox):
     return pts * bbox_scale + bbox_offset
 
 
-# vae_model_fp = '/data/lry/code/style3d_gen/log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e550.pt'
-# surfz_model_fp = '/data/lry/code/style3d_gen/log/stylexd_surfz_xyzuv_mask_latent1_mode/ckpts/surfz_e210000.pt'
-
-# output_dir = '/data/lry/code/style3d_gen/generated/surfz_e150000'
-# os.makedirs(output_dir, exist_ok=True)
-
-# # ckpt_fp = '/data/lry/code/dy/checkpoint/6G/ldm/surfz10200.pt'
-# block_dims = [16,32,32,64,64,128]
-# sample_size = 256
-# latent_size = sample_size//(2**(len(block_dims)-1))
-# latent_channels = 1
-
-
 def init_models(args):
         
     block_dims = args.block_dims
@@ -64,13 +51,13 @@ def init_models(args):
     surf_vae.load_state_dict(torch.load(args.vae), strict=False)
     surf_vae.to('cuda').eval()
 
-    # pndm_scheduler = PNDMScheduler(
-    #     num_train_timesteps=1000,
-    #     beta_schedule='linear',
-    #     prediction_type='epsilon',
-    #     beta_start=0.0001,
-    #     beta_end=0.02,
-    # )
+    pndm_scheduler = PNDMScheduler(
+        num_train_timesteps=1000,
+        beta_schedule='linear',
+        prediction_type='epsilon',
+        beta_start=0.0001,
+        beta_end=0.02,
+    )
 
     ddpm_scheduler = DDPMScheduler(
         num_train_timesteps=1000,
@@ -234,7 +221,7 @@ if __name__ == "__main__":
         help='Path to SurfZ model')
     parser.add_argument(
         '--cache', type=str, 
-        default='log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode/surfpos_train.pkl', 
+        default='log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode/surfpos_validate.pkl', 
         help='Path to cache file')    
     parser.add_argument(
         '--output', type=str, default='generated/surfz_e230000', 

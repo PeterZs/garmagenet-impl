@@ -1,17 +1,3 @@
-# BrepGen: A B-rep Generative Diffusion Model with Structured Latent Geometry (SIGGRAPH 2024)
-
-[![arXiv](https://img.shields.io/badge/📃-arXiv%20-red.svg)](https://arxiv.org/abs/2401.15563)
-[![webpage](https://img.shields.io/badge/🌐-Website%20-blue.svg)](https://brepgen.github.io) 
-[![Youtube](https://img.shields.io/badge/📽️-Video%20-orchid.svg)](https://www.youtube.com/xxx)
-
-*[Xiang Xu](https://samxuxiang.github.io/), [Joseph Lambourne](https://www.research.autodesk.com/people/joseph-george-lambourne/),
-[Pradeep Jayaraman](https://www.research.autodesk.com/people/pradeep-kumar-jayaraman/), [Zhengqing Wang](https://www.linkedin.com/in/zhengqing-wang-485854241/?originalSubdomain=ca), [Karl Willis](https://www.karlddwillis.com/), and [Yasutaka Furukawa](https://yasu-furukawa.github.io/)*
-
-![alt BrepGen](resources/teaser.jpg)
-
-> We present a diffusion-based generative approach that directly outputs a CAD B-rep. BrepGen uses a novel structured latent geometry to encode the CAD geometry and topology. A top-down generation approach is used to denoise the faces, edges, and vertices. 
-
-
 ## Requirements
 
 ### Environment (Tested)
@@ -26,8 +12,8 @@
 
 Install PyTorch and other dependencies:
 ```
-conda create --name brepgen_env python=3.9 -y
-conda activate brepgen_env
+conda create --name garmage_env python=3.9 -y
+conda activate garmage_env
 
 pip install -r requirements.txt
 pip install chamferdist
@@ -39,83 +25,104 @@ If `chamferdist` fails to install here are a few options to try:
 
 - Try [building from source](https://github.com/krrish94/chamferdist?tab=readme-ov-file#building-from-source).
 
-Install OCCWL following the instruction [here](https://github.com/AutodeskAILab/occwl).
-If conda is stuck in "Solving environment..." there are two options to try:
-
-- Try using `mamba` as suggested in occwl's README.
-
-- Install pythonOCC: https://github.com/tpaviot/pythonocc-core?tab=readme-ov-file#install-with-conda and occwl manually: `pip install git+https://github.com/AutodeskAILab/occwl`.
 
 ## Data
-Download [ABC](https://archive.nyu.edu/handle/2451/43778) STEP files (100 folders), or the [Furniture Data](https://drive.google.com/file/d/16nXl7OXOZtPxRhkGobOezDTXiBisEVs2/view?usp=sharing). 
+The dataset for training consists of `*.pkl` files for each garment (e.g. `resources/examples/processes/00000.pkl`) containing the following fields:
+```python
+result = {
+    # raw data path
+    'data_fp': data_item,
+    # comma-separated description for the garmage
+    'caption': "dress, fitted, round neck, puff sleeves, empire waist", 
+    
+    # (3, ), global offset for all garments default to [0., 1000., 0.]
+    'global_offset': global_offset.astype(np.float32),  
+    # float, global scale for all garments default to 2000
+    'global_scale': global_scale,                 
+    # (2, ) global uv offset, default to [0., 1000.]
+    'uv_offset': uv_offset.astype(np.float32),  
+    # float, global uv scale, default to 3000.
+    'uv_scale': uv_scale,         
+    
+    # xyz
+    'surf_cls': np.array(panel_cls, dtype=np.int32),
+    'surf_mask': surf_mask.astype(bool),  # (N, H, W, 1), mask for each panel, 
+                                          # N refers to number of panels in the garment. 
+                                          # By default H=W=256 refers to Garmage resolution.
+    'surf_wcs': surfs_wcs.astype(np.float32),   # (N, H, W, 3), panel points in world coordinate
+    'surf_ncs': surfs_ncs.astype(np.float32),   # (N, H, W, 3), panel points in normalized coordinate
+    
+    # uv
+    'surf_uv_wcs': surfs_uv_wcs.astype(np.float32),  # (N, H, W, 2)
+    'surf_uv_ncs': surfs_uv_ncs.astype(np.float32),  # (N, H, W, 2)               
 
-The faces, edges, and vertices need to be extracted from the STEP files.  
+    # normal
+    'surf_normals': surf_norms.astype(np.float32),
+    'corner_normals': corner_normals.astype(np.float32),
+    
+#     # optional edge-related fields
+#     'edge_wcs': edges_wcs.astype(np.float32),
+#     'edge_ncs': edges_ncs.astype(np.float32),
+#     'corner_wcs': corner_wcs.astype(np.float32),
+#     'edge_uv_wcs': edges_uv_wcs.astype(np.float32),
+#     'edge_uv_ncs': edges_uv_ncs.astype(np.float32),
+#     'corner_uv_wcs': corner_uv_wcs.astype(np.float32),
+#     'faceEdge_adj': faceEdge_adj
 
-Process the B-reps (under ```data_process``` folder):
+}
+```
+The `*.pkl` files are generated from raw `*.obj` garment assets and their sewing patterns saved as `panel.json` files (e.g., resources/examples/objs/0000). We use the following script to convert raw assets to `*.pkl` format:
 
-    sh process.sh
-
-
-Remove repeated CAD models (under ```data_process``` folder, default is ```6 bit``` ):
-
-    sh deduplicate.sh
-
-You can download the deduplicated files for [DeepCAD](https://drive.google.com/drive/folders/1N_60VCZKYgPviQgP8lwCOVXrzu9Midfe?usp=drive_link), [ABC](https://drive.google.com/drive/folders/1bA90Rz5EcwaUhUrgFbSIpgdJ0aeDjy3v?usp=drive_link), and [Furniture](https://drive.google.com/drive/folders/13TxFFSXqT4IgyIwO4z6gbm4jg3JrnbZL?usp=drive_link).
-
+```bash
+cd data_process
+python process_sxd.py -i {OBJS_SOURCE_DIR} -o {PKL_OUTPUT_DIR} --range 0,16 --use_uni_norm --nf 256
+```
+where `--range` indicates the input range, `--use_uni_norm` is a boolean flag for universal normalization (i.e. all the garments in the dataset will share the same global offset and scale if `--use_uni_norm` is specified) and `--nf` refers to the Garmage resolution.
 
 
 ## Training 
-Train the surface and edge VAE (wandb for logging):
+Firstly, train the VAE encoder to compress Garmages. By default, all Garmages in the dataset have a resolution of $256\times256$. Each garment is represented as a set of per-panel Garmages, forming a tensor of shape $N\times256\times256\times C$, where $C$ depends on the desired encoded fields. For instance, the simplest Garmage has four channels: the first three encode geometric positions, while the fourth (alpha) outlines the sewing pattern. For example:
 
-    sh train_vae.sh
+```bash
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl \
+    --expr stylexd_vae_surf_256_xyz_nrm_mask_unet6_latent_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 2000 \
+    --data_fields surf_ncs surf_normals surf_mask --chunksize 512
+```
 
-Train the latent diffusion model (change path to previously trained VAEs):
+Secondly, train the topology generator:
 
-    sh train_ldm.sh
+```bash
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl --option surfpos \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
+    --padding repeat \
+    --expr stylexd_surfpos_xyzuv_pad_repeat_uncond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 512 --max_face 32 --bbox_scaled 1.0 \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs
+```
 
-```--use_cf``` classifier-free training for the Furniture dataset. 
+Finally, train the geometry generator:
 
-```--data_aug``` randomly rotate the CAD model during training (optional).
+```bash
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e800/encoder_mode \
+    --expr stylexd_surfz_xyzuv_mask_latent1_mode_with_caption --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 2048 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 --text_encoder CLIP \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption
+```
 
-
+Training of the topology/geometry generators can run in parallel.
 
 
 ## Generation and Evaluation
-Randomly generate B-reps from Gaussian noise, both STEP and STL files will be saved:
 
-    python sample.py --mode abc
-
-This will load  the settings in ```configs/eval_config.yaml```. Make sure to update model paths to the correct folder. 
-
-Run this script for evaluation (change the path to generated data folder, with at least 3,000 samples):
-
-    sh eval.sh
-    
-This computes the JSD, MMD, and COV scores. Please also download sampled point clouds for [test set](https://drive.google.com/drive/folders/1kqxSDkS2gUN9_qpuWotFDhl4t7czbfOc?usp=sharing). 
-
-
-## Pretrained Checkpoint
-We also provide the individual checkpoints trained on different datasets. 
-| **Source Dataset** |  |   |                                                 
-|--------------------|-----------| -----------|
-| DeepCAD | [vae model](https://drive.google.com/drive/folders/1UZYqJ2EmTjzeTcNr_NL3bPpU4WrufvQa?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1jonuCzoTBFOKKlnaoGlbmhT6YlnH0lma?usp=drive_link) |
-| ABC | [vae model](https://drive.google.com/drive/folders/18Ib9L0kpFf4ylZIRTCYFhXZB_GVIUm53?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1hv7ZUcU-L3J0LiONK60-TEh7sAN0zfve?usp=drive_link) |
-| Furniture | [vae model](https://drive.google.com/drive/folders/1HT5h8b6mxcgBfz0Ciwue8nANcKgmRTd-?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1NxuZ9en6yWSkmb2pBQ97aFlWvtBSNnjU?usp=drive_link) |
-
-
-## Acknowledgement
-This research is partially supported by NSERC Discovery Grants with Accelerator Supplements and DND/NSERC Discovery Grant
-Supplement, NSERC Alliance Grants, and John R. Evans Leaders Fund (JELF). We also thank Onshape for their support and access of
-the publicly available CAD models.
-
-
-## Citation
-If you find our work useful in your research, please cite the following paper
-```
-@article{xu2024brepgen,
-  title={BrepGen: A B-rep Generative Diffusion Model with Structured Latent Geometry},
-  author={Xu, Xiang and Lambourne, Joseph G and Jayaraman, Pradeep Kumar and Wang, Zhengqing and Willis, Karl DD and Furukawa, Yasutaka},
-  journal={arXiv preprint arXiv:2401.15563},
-  year={2024}
-}
+Test the trained model with:
+```bash
+python src/batch_inference.py
 ```

@@ -14,7 +14,7 @@ from torchvision.utils import make_grid
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
-from network import AutoencoderKLFastDecode, SurfZNet
+from network import AutoencoderKLFastDecode, SurfZNet, SurfPosNet, TextEncoder
 from diffusers import DDPMScheduler, PNDMScheduler
 from utils import randn_tensor
 from vis import draw_bbox_geometry
@@ -68,11 +68,23 @@ def init_models(args):
         clip_sample=False,
     )
 
+    # Load conditioning model
+    if args.text_encoder is not None: text_enc = TextEncoder(args.text_encoder, device='cuda')
+    else: text_enc = None
+
+    # Load SurfPos Net
+    surfpos_model = SurfPosNet(
+        p_dim=10,
+        condition_dim=text_enc.text_emb_dim if args.text_encoder is not None else -1,
+        num_cf=-1
+        )
+
     # Load SurfZ Net
     surfz_model = SurfZNet(
         p_dim=10, 
         z_dim=latent_size**2*latent_channels, 
         num_heads=12, 
+        condition_dim=text_enc.text_emb_dim if args.text_encoder is not None else -1,
         num_cf=-1
         )
     surfz_model.load_state_dict(torch.load(args.surfz)['model_state_dict'])
@@ -83,7 +95,9 @@ def init_models(args):
     return {
         'surf_vae': surf_vae,
         'ddpm_scheduler': ddpm_scheduler,
+        'surfpos_model': surfpos_model,
         'surfz_model': surfz_model,
+        'text_enc': text_enc,
         'latent_channels': latent_channels,
         'latent_size': latent_size
     }
@@ -94,7 +108,8 @@ def inference_one(models, surf_pos, surf_cls=None, caption='', output_fp='', vis
     ddpm_scheduler = models['ddpm_scheduler']
     surfz_model = models['surfz_model']
     surf_vae = models['surf_vae']
-    
+    text_enc = models['text_enc']
+
     latent_channels = models['latent_channels']
     latent_size = models['latent_size']
     
@@ -108,12 +123,16 @@ def inference_one(models, surf_pos, surf_cls=None, caption='', output_fp='', vis
         surf_pos[pad_idx, ...], torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
     ], dim=0)[None, ...]
 
+    # encode text
+    text_emb = text_enc(caption) if caption and text_enc is not None else None
+
     # Diffusion Generation
     _surf_z = randn_tensor((1, 32, latent_channels*latent_size*latent_size), device='cuda')
     ddpm_scheduler.set_timesteps(1000)
     for t in ddpm_scheduler.timesteps:
         timesteps = t.reshape(-1).to('cuda')
-        pred = surfz_model(_surf_z, timesteps, _surf_pos.to('cuda'), _surf_mask.to('cuda'), None)
+        pred = surfz_model(
+            _surf_z, timesteps, _surf_pos.to('cuda'), _surf_mask.to('cuda'), text_emb, is_train=False)
         _surf_z = ddpm_scheduler.step(pred, t, _surf_z).prev_sample
         
     _surf_z = _surf_z.squeeze(0)[~_surf_mask.squeeze(0), ...]

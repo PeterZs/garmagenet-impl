@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 
 from matplotlib.colors import to_rgb
 
+import gc
+
 _CMAP = {
     "帽": {"alias": "帽", "color": "#F7815D"},
     "领": {"alias": "领", "color": "#F9D26D"},
@@ -136,15 +138,20 @@ def _create_bounding_box_mesh(min_point, max_point, color, opacity=0.2):
 
 
 def draw_bbox_geometry(
-    bboxes, 
-    bbox_colors, 
-    points=None, 
-    point_masks=None, 
-    point_colors=None, 
-    num_point_samples=1000, 
+    bboxes,
+    bbox_colors,
+    points=None,
+    point_masks=None,
+    point_colors=None,
+    num_point_samples=1000,
     title='',
-    output_fp=None):
-    
+    output_fp=None,
+    show_num=False,
+    fig_show=None
+):
+    annotations = []
+
+
     fig = go.Figure()
     for idx in range(len(bboxes)):
         # visuzlize point clouds if given
@@ -162,7 +169,7 @@ def draw_bbox_geometry(
                 marker=dict(size=2, color=point_colors[idx]),
                 name=f'Point Cloud {idx+1}'
             ))
-            
+
         # Add the bounding box lines
         min_point, max_point = bboxes[idx, :3], bboxes[idx, 3:]
         bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
@@ -170,6 +177,24 @@ def draw_bbox_geometry(
         # Add the bounding box surfaces with transparency
         bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
         fig.add_trace(bbox_mesh)
+
+        if show_num:
+            # Add annotation (always on top)
+            center = (min_point + max_point) / 2
+            annotations.append(dict(
+                showarrow=False,
+                x=center[0],
+                y=center[1],
+                z=center[2],
+                text=f'<b>{idx}</b>',
+                font=dict(color='black', size=14),
+                xanchor='left',
+                yanchor='bottom',
+                bgcolor='rgba(255,255,255,0.7)',  # Optional: white semi-transparent background
+                bordercolor='black',
+                borderwidth=1,
+                opacity=1
+            ))
 
 
     camera = dict(
@@ -181,6 +206,7 @@ def draw_bbox_geometry(
     # Update layout
     fig.update_layout(
         scene=dict(
+            annotations=annotations,
             xaxis=dict(
                 visible=False,
                 showbackground=False,
@@ -216,12 +242,210 @@ def draw_bbox_geometry(
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent plot background
         paper_bgcolor='rgba(0,0,0,0)'  # Transparent paper background
     )
-    
-    if output_fp is not None: fig.write_image(output_fp, format='png')
-    else: fig.show()
-        
-    # return fig
 
+    if output_fp is not None: fig.write_image(output_fp, format='png')
+    else: fig.show(fig_show)
+
+    if output_fp is not None and fig_show is not None:
+        fig.show(fig_show)
 
 def draw_geometry(surf_pos, surf_ncs):
     pass
+
+
+
+
+def draw_bbox_geometry_3D2D(
+    bboxes,
+    bbox_colors,
+    points=None,
+    point_masks=None,
+    point_colors=None,
+    num_point_samples=1000,
+    title='',
+    output_fp=None,
+    show_num=False,
+    fig_show=None,
+):
+    """
+    Args:
+        bboxes:
+        bbox_colors:
+        points:
+        point_masks:
+        point_colors:
+        num_point_samples:
+        title:
+        output_fp:
+        show_num:
+        fig_show:
+
+    Returns:
+
+    Usage Example:
+        fig = draw_bbox_geometry_3D2D(
+        bboxes=[data["surf_bbox_wcs"],surf_uv_bbox_wcs],
+        bbox_colors=colors,
+        points=[data["surf_wcs"], points_uv],
+        point_masks=data["surf_mask"],
+        point_colors=colors,
+        num_point_samples=1000,
+        title=f"{os.path.basename(data_path)}: {data['caption']}",
+        # output_fp=output_fp.replace('.pkl', '_pointcloud.png'),
+        show_num=True,
+        fig_show="browser"
+        )
+    """
+    # 创建两个子图，两个都是3D视图
+    fig = make_subplots(
+        rows=1, cols=2,
+        specs=[[{'type': 'scene'}, {'type': 'scene'}]],
+        horizontal_spacing=0.02,
+        subplot_titles=("View 1", "View 2")
+    )
+
+    # 3D ===
+    traces1 = []
+    annotations1 = []
+    for idx in range(len(bboxes[0])):
+        # 可视化点云
+        if points and points[0] is not None:
+            cur_points, cur_points_mask = points[0][idx].reshape(-1, 3), point_masks[idx].reshape(-1)
+            cur_points = cur_points[cur_points_mask, :]
+            if cur_points.shape[0] > num_point_samples:
+                rand_idx = np.random.choice(cur_points.shape[0], num_point_samples, replace=False)
+                cur_points = cur_points[rand_idx, :]
+            trace = go.Scatter3d(
+                x=cur_points[:, 0],
+                y=cur_points[:, 1],
+                z=cur_points[:, 2],
+                mode='markers',
+                marker=dict(size=2, color=point_colors[idx]),
+                name=f'Point Cloud {idx+1}',
+                showlegend=False
+            )
+            traces1.append(trace)
+
+        # 添加包围盒线条和表面
+        min_point, max_point = bboxes[0][idx, :3], bboxes[0][idx, 3:]
+        bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
+        bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
+        traces1.extend([bbox_lines, bbox_mesh])
+
+        if show_num:
+            center = (min_point + max_point) / 2
+            annotations1.append(dict(
+                showarrow=False,
+                x=center[0], y=center[1], z=center[2],
+                text=f'<b>{idx}</b>',
+                font=dict(color='black', size=14),
+                xanchor='left',
+                yanchor='bottom',
+                bgcolor='rgba(255,255,255,0.7)',
+                bordercolor='black',
+                borderwidth=1,
+                opacity=1
+            ))
+
+    # 把所有 traces 添加到两个 scene
+    for trace in traces1:
+        fig.add_trace(trace, row=1, col=1)
+        # fig.add_trace(trace, row=1, col=2)
+
+    # 2D ===
+    traces2 = []
+    annotations2 = []
+    for idx in range(len(bboxes[1])):
+        # 可视化点云
+        if points is not None and points[1] is not None:
+            cur_points, cur_points_mask = points[1][idx].reshape(-1, 3), point_masks[idx].reshape(-1)
+            cur_points = cur_points[cur_points_mask, :]
+            if cur_points.shape[0] > num_point_samples:
+                rand_idx = np.random.choice(cur_points.shape[0], num_point_samples, replace=False)
+                cur_points = cur_points[rand_idx, :]
+            trace = go.Scatter3d(
+                x=cur_points[:, 0],
+                y=cur_points[:, 1],
+                z=cur_points[:, 2],
+                mode='markers',
+                marker=dict(size=2, color=point_colors[idx]),
+                name=f'Point Cloud {idx+1}',
+                showlegend=False
+            )
+            traces2.append(trace)
+
+        # 添加包围盒线条和表面
+        min_point, max_point = bboxes[1][idx, :3], bboxes[1][idx, 3:]
+        bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
+        bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
+        traces2.extend([bbox_lines, bbox_mesh])
+
+        if show_num:
+            center = (min_point + max_point) / 2
+            annotations2.append(dict(
+                showarrow=False,
+                x=center[0], y=center[1], z=center[2],
+                text=f'<b>{idx}</b>',
+                font=dict(color='black', size=14),
+                xanchor='left',
+                yanchor='bottom',
+                bgcolor='rgba(255,255,255,0.7)',
+                bordercolor='black',
+                borderwidth=1,
+                opacity=1
+            ))
+
+    # 把所有 traces 添加到两个 scene
+    for trace in traces2:
+        # fig.add_trace(trace, row=1, col=1)
+        fig.add_trace(trace, row=1, col=2)
+
+
+    # 相机设置
+    camera = dict(
+        up=dict(x=0, y=1, z=0),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(x=-1.0, y=0, z=2.5)
+    )
+    camera2 = dict(
+        up=dict(x=0, y=1, z=0),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(x=0, y=0, z=2.5)
+    )
+
+    # 更新 layout
+    fig.update_layout(
+        scene=dict(
+            annotations=annotations1,
+            aspectmode='data',
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+        ),
+        scene2=dict(
+            annotations=annotations2,
+            aspectmode='data',
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+        ),
+        scene_camera=camera,
+        scene2_camera=camera2,
+        width=1600,
+        height=800,
+        margin=dict(r=0, l=0, b=0, t=40),
+        showlegend=False,
+        title=dict(text=title, automargin=True),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+
+    if output_fp is not None:
+        fig.write_image(output_fp, format='png')
+    else:
+        fig.show(fig_show)
+
+    if output_fp is not None and fig_show is not None:
+        fig.show(fig_show)
+
+    return fig

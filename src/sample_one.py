@@ -14,7 +14,8 @@ from matplotlib import pyplot as plt
 from diffusers import DDPMScheduler, PNDMScheduler
 
 from utils import randn_tensor
-from vis import draw_bbox_3D
+from vis import draw_bbox_geometry
+from matplotlib.colors import to_hex
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -38,6 +39,8 @@ text2int = {'uncond': 0,
 
     
 def sample(eval_args, out_dir, vis=True, dedup=True):
+    torch.cuda.empty_cache()
+
     # Inference configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cuda")
@@ -122,7 +125,10 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
                 else:
                     pred = surfPos_model(surfPos, timesteps, class_label)
                 surfPos = pndm_scheduler.step(pred, t, surfPos).prev_sample
-
+                # # [test]
+                # if t%50==0:
+                #     draw_bbox_geometry(surfPos[0][:,:6].detach().cpu().numpy(),
+                #                        [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, 32)])
             # Late increase for ABC/DeepCAD (slightly more efficient)
             if not eval_args['use_cf']:
                 surfPos = surfPos.repeat(1, 2, 1)
@@ -138,11 +144,18 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
                 else:
                     pred = surfPos_model(surfPos, timesteps, class_label)
                 surfPos = ddpm_scheduler.step(pred, t, surfPos).prev_sample
+                # # [test]
+                # if t%10-1==0:
+                #     draw_bbox_geometry(surfPos[0][:,:6].detach().cpu().numpy(),
+                #                        [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, 32)])
+            # # [test]
+            # draw_bbox_geometry(surfPos[0][:, :6].detach().cpu().numpy(),
+            #                    [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, 32)])
 
             #######################################
             # STEP 1-2: remove duplicate surfaces #
             #######################################
-            
+
             if dedup:
                 surfPos_deduplicate = []
                 surfMask_deduplicate = []
@@ -188,6 +201,8 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
                 #     pred = surfZ_model(_surfZ_, timesteps, _surfPos_, _surfMask_, class_label)
                 #     pred = pred[:batch_size] * (1 + w) - pred[batch_size:] * w
                 # else:
+
+                # surfZ[:, known_idx, :] = pndm_scheduler.add_noise(surfZ[:, known_idx, :], 200-t)
                 pred = surfZ_model(surfZ, timesteps, surfPos, surfMask, None)
                 surfZ = pndm_scheduler.step(pred, t, surfZ).prev_sample
 

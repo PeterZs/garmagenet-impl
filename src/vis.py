@@ -449,3 +449,49 @@ def draw_bbox_geometry_3D2D(
         fig.show(fig_show)
 
     return fig
+
+
+def pointcloud_visualize(vertices:np.array):
+    # 场景
+    fig = go.Figure()
+
+    all_coords = np.concatenate(vertices, axis=0)
+
+    min_val = np.min(all_coords)
+    max_val = np.max(all_coords)
+
+    # x, y, z坐标
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+    z = vertices[:, 2]
+
+    # 在场景中添加点云
+    fig.add_trace(go.Scatter3d(
+        x=x,
+        y=y,
+        z=z,
+        mode='markers',
+        marker=dict(
+            size=3,
+            opacity=1
+        )
+    ))
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                title='X Axis',
+                range=[min_val, max_val]
+            ),
+            yaxis=dict(
+                title='Y Axis',
+                range=[min_val, max_val]
+            ),
+            zaxis=dict(
+                title='Z Axis',
+                range=[min_val, max_val]
+            ),
+            aspectmode='cube'  # 确保各个轴的比例相同
+        ),
+    )
+
+    fig.show("browser")

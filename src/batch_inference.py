@@ -175,7 +175,7 @@ def inference_one(models, surf_pos, surf_cls=None, caption='', output_fp='', vis
         colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
         _surf_wcs = _denormalize_pts(_surf_ncs, _surf_bbox)
         # _surf_uv_wcs = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox)
-        draw_bbox_geometry(
+        draw_bbox_geometry( # [todo] 看
             bboxes = _surf_bbox, 
             bbox_colors = colors, 
             points = _surf_wcs, 
@@ -221,7 +221,7 @@ def run(args):
         
         output_fp = os.path.join(args.output, f'{sample_data_idx:04d}.pkl')
         inference_one(models, surf_pos, surf_cls, caption, output_fp, vis=True)    
-    
+
     print('[DONE]')
     
     

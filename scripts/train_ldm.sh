@@ -5,8 +5,41 @@
 # max_face 30, max_edge 20 for deepcad 
 # max_face 50, max_edge 30 for abc/furniture
 # --surfvae refer to the surface vae weights 
-# --edgevae refer to the edge vae weights 
+# --edgevae refer to the edge vae weights
 
+# 256 lsr ===
+# zero padding xyz uv mask Q1-4
+# POS
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_uncond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 512 --max_face 32 --bbox_scaled 1.0 \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs
+# Z
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_uncond --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 2048 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
+# Z resume training
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfz \
+     --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+     --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800/encoder_mode \
+     --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_uncond --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+     --batch_size 5000 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
+     --finetune --weight /data/lsr/code/style3d_gen/log/stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_uncond/ckpts/surfz_e10000.pt
+# --text_encoder CLIP
+
+
+# 256 lry ===
 ### StyleXD - SurfPos
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfpos \

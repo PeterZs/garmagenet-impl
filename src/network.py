@@ -264,25 +264,25 @@ class TextEncoder:
         if encoder == 'T5':
             import transformers
             self.tokenizer = transformers.T5TokenizerFast.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer_2')
+                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer_2')
             text_encoder = transformers.T5EncoderModel.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder_2')
+                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder_2')
             self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
             self.text_emb_dim = 4096
             self.text_embedder_fn = self._get_t5_text_embeds
         elif encoder == 'CLIP':
             import transformers
             self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer')
+                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer')
             text_encoder = transformers.CLIPTextModel.from_pretrained(
-                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder')
+                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder')
             self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
             self.text_emb_dim = 768
             self.text_embedder_fn = self._get_clip_text_embeds
         elif encoder == 'GME':
             from llm_utils.gme_inference import GmeQwen2VL
             self.text_embedder_fn = self._get_gme_text_embeds
-            self.gme = GmeQwen2VL(model_path='/data/lry/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
+            self.gme = GmeQwen2VL(model_path='/data/lsr/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
             self.text_emb_dim = 1536
         else:
             raise ValueError(f'Unsupported encoder {encoder}.')
@@ -433,15 +433,17 @@ class SurfPosNet(nn.Module):
             if is_train:
                 uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1  
                 class_label[uncond_mask] = 0
-            c_embeds = self.class_embed(class_label.squeeze(-1)) 
-            tokens += c_embeds            
-            
+            c_embeds = self.class_embed(class_label.squeeze(-1))
+            c_embeds = c_embeds.unsqueeze(1)
+            c_embeds = c_embeds.repeat((1, seq_len, 1))
+            tokens += c_embeds
+
         if self.condition_dim > 0 and condition is not None:
             cond_token = self.cond_embed(condition)
             if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
             else: tokens = torch.cat([tokens, cond_embeds], dim=1)
-       
-        output = self.net(src=tokens.permute(1,0,2))
+
+        output = self.net(src=tokens.permute(1,0,2))  # 输入输出都是：(seq_len, batch_size, d_model)
         output = output[:seq_len].transpose(0,1)
         pred = self.fc_out(output)
 
@@ -517,7 +519,7 @@ class SurfZNet(nn.Module):
         """ forward pass """
         bsz = timesteps.size(0)
 
-        time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1) 
+        time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
         z_embeds = self.z_embed(surfZ) 
         p_embeds = self.p_embed(surfPos)
 

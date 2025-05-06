@@ -10,8 +10,8 @@ import torch.nn as nn
 from torchvision.utils import make_grid
 import torchvision.transforms.functional as F
 from diffusers import AutoencoderKL, DDPMScheduler
-from network import *
-from utils import get_wandb_logging_meta
+from src.network import *
+from src.utils import get_wandb_logging_meta
 
 # visualization utils
 import plotly.graph_objects as go
@@ -72,7 +72,7 @@ class SurfVAETrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
+        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, args.expr,'wandb'))
         wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
         self.iters = run_step
 
@@ -86,7 +86,7 @@ class SurfVAETrainer():
                                              batch_size=self.batch_size,
                                              num_workers=8)
         return
-    
+
     
     def train_one_epoch(self):
         """
@@ -105,14 +105,15 @@ class SurfVAETrainer():
                 surf_uv = surf_uv.to(self.device).permute(0,3,1,2)
                 self.optimizer.zero_grad() # zero gradient
 
-                # Pass through VAE 
+                # Pass through VAE
+                # Garmage编码得到分布，从分布中采样出Z，Z解码得到Garmage
                 posterior = self.model.encode(surf_uv).latent_dist
                 z = posterior.sample()      # = posterior.mean + torch.randn_like(posterior.std)*posterior.std
                 dec = self.model.decode(z).sample
 
                 # Loss functions
-                kl_loss = posterior.kl().mean()
-                mse_loss = loss_fn(dec, surf_uv) 
+                kl_loss = posterior.kl().mean()  # posterior.kl() 返回当前批次中每个Garmage的KL散度，然后求平均值
+                mse_loss = loss_fn(dec, surf_uv)  # 同时计算Garmage编码解码后的误差
                 total_loss = mse_loss + 1e-6*kl_loss
 
                 # Update model
@@ -307,7 +308,7 @@ class SurfPosTrainer():
               
                 # Compute loss
                 total_loss = self.loss_fn(surfPos_pred, surfPos_noise)
-             
+
                 # Update model
                 self.scaler.scale(total_loss).backward()
                 nn.utils.clip_grad_norm_(self.network_params, max_norm=50.0) # clip gradient
@@ -506,12 +507,12 @@ class SurfZTrainer():
         # Train    
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
-                
+
                 surfPos, surfZ, surf_mask, surf_cls, caption = data
                 surfPos, surfZ, surf_mask, surf_cls = \
                     surfPos.to(self.device), surfZ.to(self.device), \
                     surf_mask.to(self.device), surf_cls.to(self.device)
-                                        
+
                 bsz = len(surfPos)
                 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
@@ -519,7 +520,7 @@ class SurfZTrainer():
                     aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
                     aug_noise = torch.randn(surfPos.shape).to(self.device)
                     surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
-            
+
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 

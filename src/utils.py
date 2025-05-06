@@ -13,18 +13,18 @@ from chamferdist import ChamferDistance
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from typing import List, Optional, Tuple, Union
 
-from OCC.Core.gp import gp_Pnt, gp_Pnt
-from OCC.Core.TColgp import TColgp_Array2OfPnt
-from OCC.Core.GeomAPI import GeomAPI_PointsToBSplineSurface, GeomAPI_PointsToBSpline
-from OCC.Core.GeomAbs import GeomAbs_C2
-from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeEdge
-from OCC.Extend.TopologyUtils import TopologyExplorer, WireExplorer
-from OCC.Core.TColgp import TColgp_Array1OfPnt
-from OCC.Core.gp import gp_Pnt
-from OCC.Core.ShapeFix import ShapeFix_Face, ShapeFix_Wire, ShapeFix_Edge
-from OCC.Core.ShapeAnalysis import ShapeAnalysis_Wire
-from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Sewing, BRepBuilderAPI_MakeSolid
-
+# from OCC.Core.gp import gp_Pnt, gp_Pnt
+# from OCC.Core.TColgp import TColgp_Array2OfPnt
+# from OCC.Core.GeomAPI import GeomAPI_PointsToBSplineSurface, GeomAPI_PointsToBSpline
+# from OCC.Core.GeomAbs import GeomAbs_C2
+# from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeEdge
+# from OCC.Extend.TopologyUtils import TopologyExplorer, WireExplorer
+# from OCC.Core.TColgp import TColgp_Array1OfPnt
+# from OCC.Core.gp import gp_Pnt
+# from OCC.Core.ShapeFix import ShapeFix_Face, ShapeFix_Wire, ShapeFix_Edge
+# from OCC.Core.ShapeAnalysis import ShapeAnalysis_Wire
+# from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Sewing, BRepBuilderAPI_MakeSolid
+#
 
 
 
@@ -935,3 +935,13 @@ def get_wandb_logging_meta(wandb_logging_dir):
     print('Resumming wandb logging from %s. RUN_ID: %s RUN_STEP: %d.'%(latest_run_dir, run_id, run_step))
     
     return run_id, run_step
+
+
+def _denormalize_pts(pts, bbox):
+    pos_dim =  pts.shape[-1]
+    bbox_min = bbox[..., :pos_dim][:, None, ...]
+    bbox_max = bbox[..., pos_dim:][:, None, ...]
+    bbox_scale = np.max(bbox_max - bbox_min, axis=-1, keepdims=True) * 0.5
+    bbox_offset = (bbox_max + bbox_min) / 2.0
+    return pts * bbox_scale + bbox_offset
+

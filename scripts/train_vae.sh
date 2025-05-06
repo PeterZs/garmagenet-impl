@@ -1,13 +1,28 @@
 #!/bin/bash\
 
 ### StyleXD VAE Training ###
-python src/vae.py --data /data/AIGP/brep_reso_64_edge_snap \
-    --train_list data_process/stylexd_data_split_reso_64.pkl \
-    --val_list data_process/stylexd_data_split_reso_64.pkl \
-    --gpu 1 --expr stylexd_vae_surf_64_xyz_uv_mask \
-    --batch_size 512 --train_nepoch 2000 --block_dims 32,64,64,128 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask 
+# 64 reso training
+#python src/vae.py --data /data/AIGP/brep_reso_64_edge_snap \
+#    --train_list data_process/stylexd_data_split_reso_64.pkl \
+#    --val_list data_process/stylexd_data_split_reso_64.pkl \
+#    --gpu 1 --expr stylexd_vae_surf_64_xyz_uv_mask \
+#    --batch_size 512 --train_nepoch 2000 --block_dims 32,64,64,128 \
+#    --data_fields surf_ncs surf_uv_ncs surf_mask
 
+# 256 lsr ===
+# VAE xyz_uv_mask Q_1_2_4
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 2000 \
+    --data_fields surf_ncs surf_uv_ncs surf_mask --chunksize 512
+
+
+
+
+# 256 lry ===
 python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl \
     --expr stylexd_vae_surf_256_xyz_nrm_mask_unet6_latent_1 \

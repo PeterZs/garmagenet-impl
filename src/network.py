@@ -373,6 +373,37 @@ class TextEncoder:
         return self.text_embedder_fn(prompt)
 
 
+class PointcloudEncoder:
+    def __init__(self, encoder='POINT_E', device='cuda'):
+
+        self.device = device
+
+        if encoder == 'POINT_E':
+            from src.models.pc_backbone.point_e.evals.feature_extractor import PointNetClassifier
+            """
+            cache_dir 是pretrain model的路径
+            """
+            self.pointcloud_emb_dim = 512
+            self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='/data/lsr/models/PFID_evaluator', device_batch_size=1)
+            self.pointcloud_embedder_fn = self._get_pointe_pointcloud_embeds
+        else:
+            raise NotImplementedError
+
+        # Test encoding text
+        print(f"[DONE] Init {encoder} text encoder.")
+
+    def _get_pointe_pointcloud_embeds(
+            self,
+            point_cloud
+    ):
+        feature_embedding =  self.pointcloud_encoder.get_features(point_cloud)
+        return feature_embedding
+
+    def __call__(self, point_cloud):
+        return self.pointcloud_embedder_fn(point_cloud)
+
+
+
 class SurfPosNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position

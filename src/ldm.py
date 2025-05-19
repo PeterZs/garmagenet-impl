@@ -44,6 +44,10 @@ def get_args_ldm():
 
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help="Text encoder when applying text as generation condition.")
+    parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
+    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B'], help="")
+    parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="Text encoder when applying text as generation condition.")
+
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
     parser.add_argument('--sample_mode', type=str, default='sample', choices=['mode', 'sample'], help='Encoder mode of the vae model.')
@@ -74,8 +78,6 @@ def run(args):
         val_dataset = SurfZData(
             args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
-        
-
     else:
         assert False, 'please choose between [surfpos, surfz, edgepos, edgez]'
 

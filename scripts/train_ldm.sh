@@ -8,7 +8,78 @@
 # --edgevae refer to the edge vae weights
 
 # 256 lsr ===
-# zero padding xyz uv mask Q1-4
+# zero padding xyz uv mask Q1-2 pcCond ===
+# POS  Bsize 199:3420
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256.pkl --option surfpos \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond/encoder_mode \
+    --padding zero \
+    --expr stylexd_surfpos_xyzuv_pad_zero_pcCond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 3420 --max_face 32 --bbox_scaled 1.0 \
+    --pointcloud_encoder POINT_E \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+# Z   Bsize 199:3420
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256.pkl --option surfz \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond/encoder_mode \
+    --expr stylexd_surfz_xyzuv_pad_zero_pcCond --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 3420 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --pointcloud_encoder POINT_E \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+
+# zero padding xyz uv mask Q1-4 sketchCond ===
+# POS Bsize 187:3420
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_sketchCond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 2500 --max_face 32 --bbox_scaled 1.0 \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+# Z Bsize 188:3420 190:5000
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_sketchCond --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 5000 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+
+
+# zero padding xyz uv mask Q1-4 pcCond ===
+# POS Bsize 187:3420
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
+    --batch_size 3420 --max_face 32 --bbox_scaled 1.0 \
+    --pointcloud_encoder POINT_E \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+# Z Bsize 188:3420
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_Q124/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 3420 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --pointcloud_encoder POINT_E \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+
+
+# zero padding xyz uv mask Q1-4 unCond
 # POS
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \

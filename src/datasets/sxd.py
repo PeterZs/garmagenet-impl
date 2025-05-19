@@ -5,7 +5,9 @@ import pickle
 import torch
 import numpy as np
 from tqdm import tqdm
+from glob import glob
 import random
+from src.network import PointcloudEncoder
 from multiprocessing.pool import Pool
 from utils import (
     rotate_point_cloud,
@@ -156,6 +158,7 @@ class SurfPosData(torch.utils.data.Dataset):
     """ Surface position (3D bbox) Dataloader """
     def __init__(self, input_data, input_list, validate=False, aug=False, args=None,
                  use_data_root=False):
+        self.args = args
 
         self.max_face = args.max_face
         self.bbox_scaled = args.bbox_scaled
@@ -172,6 +175,15 @@ class SurfPosData(torch.utils.data.Dataset):
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('ckpts', 'cache'),
             'surfpos_%s.pkl'%('validate' if validate else 'train')
         )
+
+        if "pointcloud_feature" in self.data_fields:
+            print("Use Pointcloud feature.")
+            self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
+
+        if "sketch_feature" in self.data_fields:
+            print("Use Sketch feature.")
+            self.sketch_feature_dir = args.sketch_feature_dir
+            assert os.path.exists(self.sketch_feature_dir)
 
         if os.path.exists(self.cache_fp):
             with open(self.cache_fp, 'rb') as f: self.cache = pickle.load(f)
@@ -191,6 +203,7 @@ class SurfPosData(torch.utils.data.Dataset):
                 print('*** data_list: ', self.data_list[0])
                 # if self.validate: self.data_list = random.choices(self.data_list, k=128)
             print('Total items: ', len(self.data_list))
+            # self.data_list = self.data_list[:60]  # [TODO] 删掉
             self.__load_all__()
 
 
@@ -211,29 +224,61 @@ class SurfPosData(torch.utils.data.Dataset):
         # Load caption
         caption = data['caption'] if 'caption' in self.data_fields else ''
 
+        # Load pointcloud feature
+        if 'pointcloud_feature' in self.data_fields:
+            n_surfs = len(data['surf_bbox_wcs'])
+            surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
+            surf_mask = data["surf_mask"].reshape(n_surfs, -1)
+            valid_pts = surf_wcs[surf_mask]
+            sampled_pts = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            pointcloud_feature = self.pointcloud_encoder(sampled_pts)
+
+        if "sketch_feature" in self.data_fields:
+            data_fp = data["data_fp"]
+            data_fp = data_fp.replace("\\", "/")
+            if "Q1" in data_fp or "Q2" in data_fp:
+                data_fp = data_fp.split("工程数据")[1]
+                data_fp = data_fp.replace("/objs/", "/")
+            elif "Q4" in data_fp:
+                # print(f"data_fp: {data_fp}")
+                data_fp = data_fp.split("工程数据")[1]
+                data_fp = data_fp.replace("_objs", "")
+            sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
+            if len(sketch_feature_fp) == 0:
+                raise FileExistsError(f"sketch_feature_fp: {sketch_feature_fp} 不存在，可能是因为没有做对应衣服的多视角图")
+            else:
+                sketch_feature_fp = sketch_feature_fp[0]
+            sketch_feature = np.load(sketch_feature_fp)
+            if sketch_feature.ndim == 1:
+                sketch_feature = sketch_feature[np.newaxis, ...]
+
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
         if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
 
         return (
             torch.FloatTensor(surf_pos),
             torch.LongTensor(surf_cls),
+            torch.FloatTensor(pointcloud_feature) if 'pointcloud_feature' in self.data_fields else None,
+            torch.FloatTensor(sketch_feature) if 'sketch_feature' in self.data_fields else None,
             caption
         )
 
 
     def __load_all__(self):
-        cache = {'surf_pos': [], 'surf_cls': [], 'caption': [], 'item_idx': []}
+        cache = {'surf_pos': [], 'surf_cls': [], "pointcloud_feature": [], "sketch_feature": [], 'caption': [], 'item_idx': []}
         start_idx, end_idx = 0, 0
         for uid in tqdm(self.data_list):
             data_fp = uid
             try:
-                surf_pos, surf_cls, caption = self.__load_one__(data_fp)
+                surf_pos, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
                 assert surf_pos.shape[0]<=self.max_face
                 start_idx = end_idx
                 end_idx = start_idx + surf_pos.shape[0]
                 cache['surf_pos'].append(surf_pos)
                 cache['surf_cls'].append(surf_cls)
                 cache['caption'].append(caption)
+                cache['pointcloud_feature'].append(pointcloud_feature)
+                cache['sketch_feature'].append(sketch_feature)
                 cache['item_idx'].append((start_idx, end_idx))
             except Exception as e:
                 print(f"Error loading {data_fp}: {e}")
@@ -241,7 +286,10 @@ class SurfPosData(torch.utils.data.Dataset):
 
         cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
-
+        if "pointcloud_feature" in self.data_fields:
+            cache['pointcloud_feature'] = torch.cat(cache['pointcloud_feature'], dim=0)
+        if "sketch_feature" in self.data_fields:
+            cache['sketch_feature'] = torch.cat(cache['sketch_feature'], dim=0)
         self.cache = cache
         print('Load all data: ', self.cache['surf_pos'].shape, self.cache.keys())
 
@@ -279,8 +327,8 @@ class SurfPosData(torch.utils.data.Dataset):
         return surf_pos, surf_cls, pad_mask
 
 
-    def __len__(self): return len(self.data_list) if hasattr(self, 'data_list') else len(self.cache['item_idx'])
-
+    # def __len__(self): return len(self.data_list) if hasattr(self, 'data_list') else len(self.cache['item_idx'])
+    def __len__(self): return len(self.cache['item_idx'])
 
     def __getitem__(self, index):
 
@@ -306,7 +354,11 @@ class SurfPosData(torch.utils.data.Dataset):
 
             caption = ', '.join(caption)
 
-        return (surf_pos, pad_mask, surf_cls, caption)
+
+        pointcloud_feature = self.cache['pointcloud_feature'][index] if 'pointcloud_feature' in self.data_fields else 0
+        sketch_feature = self.cache['sketch_feature'][index]  if 'sketch_feature' in self.data_fields else 0
+
+        return (surf_pos, pad_mask, surf_cls, caption, pointcloud_feature, sketch_feature)
 
 
 class SurfZData(torch.utils.data.Dataset):
@@ -320,6 +372,7 @@ class SurfZData(torch.utils.data.Dataset):
             args=None,
             use_data_root=False,
     ):
+        self.args = args
 
         self.max_face = args.max_face
         self.bbox_scaled = args.bbox_scaled
@@ -338,6 +391,15 @@ class SurfZData(torch.utils.data.Dataset):
 
         self.data_fields = args.data_fields
         self.padding = args.padding
+
+        if "pointcloud_feature" in self.data_fields:
+            print("Use Pointcloud feature.")
+            self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
+
+        if "sketch_feature" in self.data_fields:
+            print("Use Sketch feature.")
+            self.sketch_feature_dir = args.sketch_feature_dir
+            assert os.path.exists(self.sketch_feature_dir)
 
         print('Loading %s data...'%('validation' if validate else 'training'))
         with open(input_list, 'rb') as f: self.data_list = pickle.load(f)['val' if self.validate else 'train']
@@ -410,6 +472,34 @@ class SurfZData(torch.utils.data.Dataset):
         if 'surf_mask' in self.data_fields: surf_ncs.append(data['surf_mask'].astype(np.float32)*2.0-1.0)
         surf_ncs = np.concatenate(surf_ncs, axis=-1)
 
+        # Load pointcloud feature
+        if 'pointcloud_feature' in self.data_fields:
+            n_surfs = len(data['surf_bbox_wcs'])
+            surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
+            surf_mask = data["surf_mask"].reshape(n_surfs, -1)
+            valid_pts = surf_wcs[surf_mask]
+            sampled_pts = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            pointcloud_feature = self.pointcloud_encoder(sampled_pts)
+
+        if "sketch_feature" in self.data_fields:
+            data_fp = data["data_fp"]
+            data_fp = data_fp.replace("\\", "/")
+            if "Q1" in data_fp or "Q2" in data_fp:
+                data_fp = data_fp.split("工程数据")[1]
+                data_fp = data_fp.replace("/objs/", "/")
+            elif "Q4" in data_fp:
+                # print(f"data_fp: {data_fp}")
+                data_fp = data_fp.split("工程数据")[1]
+                data_fp = data_fp.replace("_objs", "")
+            sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
+            if len(sketch_feature_fp) == 0:
+                raise FileExistsError(f"sketch_feature_fp: {sketch_feature_fp} 不存在，可能是因为没有做对应衣服的多视角图")
+            else:
+                sketch_feature_fp = sketch_feature_fp[0]
+            sketch_feature = np.load(sketch_feature_fp)
+            if sketch_feature.ndim == 1:
+                sketch_feature = sketch_feature[np.newaxis, ...]
+
         # Load semantics
         surf_cls = data['surf_cls'][..., None] if 'surf_cls' in self.data_fields \
             else np.zeros((self.max_face, 1)) - 1
@@ -426,6 +516,8 @@ class SurfZData(torch.utils.data.Dataset):
             torch.FloatTensor(surf_pos),
             torch.FloatTensor(surf_ncs),
             torch.LongTensor(surf_cls),
+            torch.FloatTensor(pointcloud_feature) if 'pointcloud_feature' in self.data_fields else None,
+            torch.FloatTensor(sketch_feature) if 'sketch_feature' in self.data_fields else None,
             caption
         )
 
@@ -537,6 +629,8 @@ class SurfZData(torch.utils.data.Dataset):
             'latent': [],
             'surf_cls': [],
             'caption': [],
+            'pointcloud_feature': [],
+            'sketch_feature': [],
             'item_idx': []  # start and end index of each item in the cache
         }
 
@@ -545,7 +639,7 @@ class SurfZData(torch.utils.data.Dataset):
 
             data_fp = os.path.join(self.data_root, data_id)
             try:
-                surf_pos, surf_ncs, surf_cls, caption = self.__load_one__(data_fp)
+                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
                 assert surf_pos.shape[0] <= self.max_face
                 with torch.no_grad():
                     z = self.z_encoder(surf_ncs.permute(0, 3, 1, 2).to(z_device)).flatten(start_dim=1)
@@ -558,6 +652,8 @@ class SurfZData(torch.utils.data.Dataset):
                 cache['caption'].append(caption)
                 cache['item_idx'].append((start_idx, end_idx))
                 cache['data_id'].append(data_id)
+                cache['pointcloud_feature'].append(pointcloud_feature)
+                cache['sketch_feature'].append(sketch_feature)
                 cache['latent'].append(z.to(surf_pos.device).to(surf_pos.dtype))
 
             except Exception as e:
@@ -567,6 +663,10 @@ class SurfZData(torch.utils.data.Dataset):
         cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
         cache['latent'] = torch.cat(cache['latent'], dim=0)
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
+        if "pointcloud_feature" in self.data_fields:
+            cache['pointcloud_feature'] = torch.cat(cache['pointcloud_feature'], dim=0)
+        if "sketch_feature" in self.data_fields:
+            cache['sketch_feature'] = torch.cat(cache['sketch_feature'], dim=0)
 
         self.cache = cache
 
@@ -609,6 +709,8 @@ class SurfZData(torch.utils.data.Dataset):
             'surf_ncs': [],
             'surf_cls': [],
             'caption': [],
+            'pointcloud_feature': [],
+            'sketch_feature': [],
             'item_idx': []  # start and end index of each item in the cache
         }
 
@@ -617,7 +719,7 @@ class SurfZData(torch.utils.data.Dataset):
             data_fp = uid
 
             try:
-                surf_pos, surf_ncs, surf_cls, caption = self.__load_one__(data_fp)
+                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
 
                 start_idx = end_idx
                 end_idx = start_idx + surf_pos.shape[0]
@@ -626,6 +728,8 @@ class SurfZData(torch.utils.data.Dataset):
                 cache['surf_ncs'].append(surf_ncs)
                 cache['surf_cls'].append(surf_cls)
                 cache['caption'].append(caption)
+                cache["pointcloud_feature"].append(pointcloud_feature)
+                cache["sketch_feature"].append(sketch_feature)
                 cache['item_idx'].append((start_idx, end_idx))
 
             except Exception as e:
@@ -635,6 +739,10 @@ class SurfZData(torch.utils.data.Dataset):
         cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
         cache['surf_ncs'] = torch.cat(cache['surf_ncs'], dim=0)
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
+        if "pointcloud_feature" in self.data_fields:
+            cache["pointcloud_feature"] = torch.cat(cache["pointcloud_feature"], dim=0)
+        if "sketch_feature" in self.data_fields:
+            cache["sketch_feature"] = torch.cat(cache["sketch_feature"], dim=0)
 
         self.cache = cache
         self.__encode_chunk__()
@@ -668,6 +776,11 @@ class SurfZData(torch.utils.data.Dataset):
 
             # print('*** new caption: ', caption)
 
+        pointcloud_feature = self.cache['pointcloud_feature'][index%len(self.cache['item_idx'])]  \
+            if 'pointcloud_feature' in self.data_fields else 0
+        sketch_feature = self.cache['sketch_feature'][index%len(self.cache['item_idx'])]  \
+            if 'sketch_feature' in self.data_fields else 0
+
         return (
-            surf_pos, surf_latents, pad_mask, surf_cls, caption
+            surf_pos, surf_latents, pad_mask, surf_cls, caption, pointcloud_feature, sketch_feature
         )

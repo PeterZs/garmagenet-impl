@@ -216,14 +216,31 @@ class SurfPosTrainer():
 
         # Initialize text encoder
         if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
+        if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
+        if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
+        assert args.text_encoder is None or args.pointcloud_encoder is None or args.sketch_encoder is None
+
+        if hasattr(self, 'text_encoder'):
+            condition_dim = self.text_encoder.text_emb_dim
+        elif hasattr(self, 'pointcloud_encoder'):
+            condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
+        elif args.sketch_encoder is not None:
+            if args.sketch_encoder == "LAION2B":
+                condition_dim = 1280
+            else:
+                raise NotImplementedError("args.sketch_encoder name wrong.")
+        else:
+            condition_dim = -1
+
 
         # Initialize network
         self.pos_dim = train_dataset.pos_dim
+
         model = SurfPosNet(
-            p_dim=self.pos_dim*2, 
-            condition_dim=self.text_encoder.text_emb_dim if hasattr(self, 'text_encoder') else -1,
+            p_dim=self.pos_dim * 2,
+            condition_dim=condition_dim,
             num_cf=train_dataset.num_classes)
-        
+
         if args.finetune:
             state_dict = torch.load(args.weight)
             if 'bbox_scaled' in state_dict:
@@ -289,14 +306,21 @@ class SurfPosTrainer():
         # Train    
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
-                
-                surfPos, pad_mask, class_label, caption = data
-                                
+                surfPos, pad_mask, class_label, caption, pointcloud_feature, sketch_feature = data
+
                 surfPos = surfPos.to(self.device)
-                class_label = class_label.to(self.device)                
-                
-                text_emb = self.text_encoder(caption) if \
-                    caption and hasattr(self, 'text_encoder') else None
+                class_label = class_label.to(self.device)
+
+                if hasattr(self, 'text_encoder'):
+                    condition_emb = self.text_encoder(caption)
+                elif hasattr(self, 'pointcloud_encoder'):
+                    pointcloud_feature.to(self.device)
+                    condition_emb = pointcloud_feature
+                elif hasattr(self, 'sketch_encoder'):
+                    sketch_feature.to(self.device)
+                    condition_emb = sketch_feature
+                else:
+                    condition_emb = None
 
                 bsz = len(surfPos)
                 
@@ -308,7 +332,7 @@ class SurfPosTrainer():
                 surfPos_diffused = self.noise_scheduler.add_noise(surfPos, surfPos_noise, timesteps)
 
                 # Predict noise
-                surfPos_pred = self.model(surfPos_diffused, timesteps, class_label, text_emb, True)
+                surfPos_pred = self.model(surfPos_diffused, timesteps, class_label, condition_emb, True)
               
                 # Compute loss
                 total_loss = self.loss_fn(surfPos_pred, surfPos_noise)
@@ -340,12 +364,24 @@ class SurfPosTrainer():
         total_loss = [0,0,0,0,0]
 
         for data in self.val_dataloader:
-            surfPos, pad_mask, class_label, caption = data
+            surfPos, pad_mask, class_label, caption, pointcloud_feature, sketch_feature = data
+
             surfPos = surfPos.to(self.device)
-            class_label = class_label.to(self.device) 
-            
-            text_emb = self.text_encoder(caption) if \
-                caption and hasattr(self, 'text_encoder') else None
+            class_label = class_label.to(self.device)
+
+            if hasattr(self, 'text_encoder'):
+                condition_emb = self.text_encoder(caption)
+            elif hasattr(self, 'pointcloud_encoder'):
+                pointcloud_feature.to(self.device)
+                condition_emb = pointcloud_feature
+            elif hasattr(self, 'sketch_encoder'):
+                sketch_feature.to(self.device)
+                condition_emb = sketch_feature
+            else:
+                condition_emb = None
+
+            # text_emb = self.text_encoder(caption) if \
+            #     caption and hasattr(self, 'text_encoder') else None
             bsz = len(surfPos)
             total_count += len(surfPos)
             
@@ -359,7 +395,7 @@ class SurfPosTrainer():
                 surfPos_noise = torch.randn(surfPos.shape).to(self.device)  
                 surfPos_diffused = self.noise_scheduler.add_noise(surfPos, surfPos_noise, timesteps)
                 
-                with torch.no_grad(): pred = self.model(surfPos_diffused, timesteps, class_label, text_emb) 
+                with torch.no_grad(): pred = self.model(surfPos_diffused, timesteps, class_label, condition_emb)
                 
                 loss = mse_loss(pred, surfPos_noise).mean((1,2)).sum().item()
                 total_loss[idx] += loss
@@ -404,9 +440,23 @@ class SurfZTrainer():
         self.sample_size = self.train_dataset.resolution
         self.latent_channels = args.latent_channels
         self.block_dims = args.block_dims
-                 
+
         # Initialize text encoder
         if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
+        if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
+        if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
+        assert args.text_encoder is None or args.pointcloud_encoder is None or args.sketch_encoder is None
+        if hasattr(self, 'text_encoder'):
+            condition_dim = self.text_encoder.text_emb_dim
+        elif hasattr(self, 'pointcloud_encoder'):
+            condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
+        elif args.sketch_encoder is not None:
+            if args.sketch_encoder == "LAION2B":
+                condition_dim = 1280
+            else:
+                raise NotImplementedError("args.sketch_encoder name wrong.")
+        else:
+            condition_dim = -1
 
         # Load pretrained surface vae (fast encode version)
         surf_vae_encoder = AutoencoderKLFastEncode(
@@ -437,7 +487,7 @@ class SurfZTrainer():
             p_dim=self.pos_dim*2,
             z_dim=(self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels,
             num_heads=12,
-            condition_dim=self.text_encoder.text_emb_dim if hasattr(self, 'text_encoder') else -1,
+            condition_dim=condition_dim,
             num_cf=train_dataset.num_classes
             )
         
@@ -514,12 +564,23 @@ class SurfZTrainer():
         # Train    
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
-
-                surfPos, surfZ, surf_mask, surf_cls, caption = data
+                surfPos, surfZ, surf_mask, surf_cls, caption, pointcloud_feature, sketch_feature  = data
                 surfPos, surfZ, surf_mask, surf_cls = \
                     surfPos.to(self.device), surfZ.to(self.device), \
                     surf_mask.to(self.device), surf_cls.to(self.device)
 
+                # encode text
+                if hasattr(self, 'text_encoder'):
+                    condition_emb = self.text_encoder(caption)
+                elif hasattr(self, 'pointcloud_encoder'):
+                    pointcloud_feature.to(self.device)
+                    condition_emb = pointcloud_feature
+                elif hasattr(self, 'sketch_encoder'):
+                    sketch_feature.to(self.device)
+                    condition_emb = sketch_feature
+                else:
+                    condition_emb = None
+                    
                 bsz = len(surfPos)
                 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
@@ -531,17 +592,13 @@ class SurfZTrainer():
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 
-                # encode text
-                text_emb = self.text_encoder(caption) if \
-                    caption and hasattr(self, 'text_encoder') else None
-
                 # Add noise
                 timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
                 surfZ_noise = torch.randn(surfZ.shape).to(self.device)  
                 surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
                 
                 # Predict noise
-                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, text_emb, is_train=True)
+                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
 
                 # Loss
                 total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])        
@@ -594,14 +651,22 @@ class SurfZTrainer():
 
         vis_batch = torch.randint(0, len(self.val_dataloader), (1,)).item()        
         for batch_idx, data in enumerate(self.val_dataloader):
-            surfPos, surfZ, surf_mask, surf_cls, caption = data
+            surfPos, surfZ, surf_mask, surf_cls, caption, pointcloud_feature, sketch_feature  = data
             surfPos, surfZ, surf_mask, surf_cls = \
                 surfPos.to(self.device), surfZ.to(self.device), \
                 surf_mask.to(self.device), surf_cls.to(self.device)
-            
+
             # encode text
-            text_emb = self.text_encoder(caption) if \
-                caption and hasattr(self, 'text_encoder') else None
+            if hasattr(self, 'text_encoder'):
+                condition_emb = self.text_encoder(caption)
+            elif hasattr(self, 'pointcloud_encoder'):
+                pointcloud_feature.to(self.device)
+                condition_emb = pointcloud_feature
+            elif hasattr(self, 'sketch_encoder'):
+                sketch_feature.to(self.device)
+                condition_emb = sketch_feature
+            else:
+                condition_emb = None
 
             bsz = len(surfPos)
                         
@@ -615,7 +680,7 @@ class SurfZTrainer():
                 noise = torch.randn(tokens.shape).to(self.device)  
                 diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
                 
-                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls, text_emb)
+                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb)
                     
                 loss = mse_loss(pred[~surf_mask], noise[~surf_mask]).mean(-1).sum().item()
                 total_loss[idx] += loss
@@ -633,7 +698,7 @@ class SurfZTrainer():
                 self.val_dataset, shuffle=False, 
                 batch_size=self.batch_size, num_workers=16)
         return
-    
+
 
     def save_model(self):
         ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')

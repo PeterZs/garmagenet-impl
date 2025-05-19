@@ -1,3 +1,4 @@
+import os
 import random
 import numpy as np
 import pandas as pd
@@ -14,7 +15,7 @@ def add_horizontal_arrow(y_position, x_start, x_end, text, color="black"):
     plt.text((x_start + x_end) / 2, y_position + 50, text, ha='center', fontsize=10, color=color)
 
 
-def draw_hist_comp(data_id, src_data, trgt_data, src_label="stylexd", trgt_label="garmentcode", x_lim=None, num_samples=10000):
+def draw_hist_comp(data_id, src_data, trgt_data, src_label="garmage", trgt_label="garmentcode", x_lim=None, num_samples=10000):
     
     if isinstance(src_data, pd.Series): src_data = src_data.values
     if isinstance(trgt_data, pd.Series): trgt_data = trgt_data.values
@@ -68,29 +69,41 @@ def draw_hist_comp(data_id, src_data, trgt_data, src_label="stylexd", trgt_label
     plt.clf()
     
     print('[Done] saving results/' + data_id.replace('/', '_per_') + '.png')
-            
 
-# Number of edges per panel
-stylexd_data = pd.read_csv("styxd_data_edge.csv")["edge_num"]
-garmentcode_data = pd.read_csv("garmentcode_data_edge.csv")["edge_num"]
-draw_hist_comp("edges/panel", stylexd_data, garmentcode_data, x_lim=50)
 
-# Number of panels per pattern
-stylexd_data = pd.read_csv("styxd_data_panel_stitch.csv")["panel_num"]
-garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["panel_num"]
-draw_hist_comp("panels/pattern", stylexd_data, garmentcode_data, x_lim=30)
+if __name__ == '__main__':
 
-# Number of stitches per pattern
-stylexd_data = pd.read_csv("styxd_data_panel_stitch.csv")["stitch_num"]
-garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["stitch_num"]
-draw_hist_comp("stitches/panel", stylexd_data, garmentcode_data, x_lim=125)
 
-# Number of vertices per garment
-stylexd_data = pd.read_csv("stylexd_verts_faces.csv")["vertex_num"]
-garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["vertex_num"]
-draw_hist_comp("vertices/garment", stylexd_data, garmentcode_data, x_lim=100000)
+    a=1
+    # output_dir = "/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/results_Q124"
+    # os.makedirs(output_dir, exist_ok=True)
 
-# Number of faces per garment
-stylexd_data = pd.read_csv("stylexd_verts_faces.csv")["face_num"]
-garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["face_num"]
-draw_hist_comp("faces/garment", stylexd_data, garmentcode_data, x_lim=60000)
+    # Number of edges per panel
+    # stylexd_data = pd.read_csv("styxd_data_edge.csv")["edge_num"]
+    stylexd_data = pd.read_csv("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/statistics_Q124/styxd_data_edge.csv")["edge_num"]
+    garmentcode_data = pd.read_csv("garmentcode_data_edge.csv")["edge_num"]
+    draw_hist_comp("edges/panel", stylexd_data, garmentcode_data, x_lim=32)
+
+    # Number of panels per pattern
+    # stylexd_data = pd.read_csv("styxd_data_panel_stitch.csv")["panel_num"]
+    stylexd_data = pd.read_csv("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/statistics_Q124/styxd_data_panel_stitch.csv")["panel_num"]
+    garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["panel_num"]
+    draw_hist_comp("panels/pattern", stylexd_data, garmentcode_data, x_lim=50)
+
+    # Number of stitches per pattern
+    # stylexd_data = pd.read_csv("styxd_data_panel_stitch.csv")["stitch_num"]
+    stylexd_data = pd.read_csv("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/statistics_Q124/styxd_data_panel_stitch.csv")["stitch_num"]
+    garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["stitch_num"]
+    draw_hist_comp("stitches/garment", stylexd_data, garmentcode_data, x_lim=160)
+
+    # Number of vertices per garment
+    # stylexd_data = pd.read_csv("stylexd_verts_faces.csv")["vertex_num"]
+    stylexd_data = pd.read_csv("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/statistics_Q124/stylexd_verts_faces.csv")["vertex_num"]
+    garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["vertex_num"]
+    draw_hist_comp("vertices/garment", stylexd_data, garmentcode_data, x_lim=165000)
+
+    # Number of faces per garment
+    # stylexd_data = pd.read_csv("stylexd_verts_faces.csv")["face_num"]
+    stylexd_data = pd.read_csv("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/notebooks/data_analysize/statistics_Q124/stylexd_verts_faces.csv")["face_num"]
+    garmentcode_data = pd.read_csv("garmentcode_data_panel_stitch.csv")["face_num"]
+    draw_hist_comp("faces/garment", stylexd_data, garmentcode_data, x_lim=400000)

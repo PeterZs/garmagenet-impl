@@ -105,7 +105,7 @@ def init_models(args):
         surfpos_model.load_state_dict(
             torch.load('/home/Ex1/data/models/style3d_gen/surf_pos/stylexd_surfpos_xyzuv_pad_repeat_cond_clip/ckpts/surfpos_e60000.pt')['model_state_dict'])
         surfz_model.load_state_dict(
-            torch.load('/home/Ex1/data/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode_with_caption/ckpts/surfz_e100000.pt')['model_state_dict'])
+            torch.load('/home/Ex1/data/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode_with_caption/ckpts/surfz_e95000.pt')['model_state_dict'])
     else:
         surfpos_model.load_state_dict(
             torch.load('/home/Ex1/data/models/style3d_gen/surf_pos/stylexd_surfpos_xyzuv_pad_repeat_uncond/ckpts/surfpos_e5000.pt')['model_state_dict'])
@@ -355,9 +355,11 @@ def init_inference(models,
             fig_show="browser"
         )
 
-    _edited_mask = np.zeros((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
-    _edited_mask[:n_surfs] = True
+    # _edited_mask = np.zeros((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
+    # _edited_mask[:n_surfs] = True
 
+    # 所有板片都被视为编辑过的
+    _unedited_mask = np.zeros((max_surf), dtype=np.bool)
 
     result = {
         'surf_bbox': _surf_bbox,        # (N, 6)
@@ -366,12 +368,14 @@ def init_inference(models,
         'surf_uv_ncs': _surf_uv_ncs,    # (N, 256*256, 2)
         'surf_mask': _surf_ncs_mask,    # (N, 256*256) => bool
         'caption': caption,             # str
-        'edited_mask': _edited_mask,    # (max_surfs)
-        "latent_code": surf_z           # (N, 64)
+        'unedited_mask': _unedited_mask,    # (max_surfs)
+        "latent_code": surf_z.detach().cpu().numpy().squeeze(0)           # (N, 64)
     }
-    if output_fp:
-        with open(output_fp, 'wb') as f: pickle.dump(result, f)
-    print('[DONE] save to:', output_fp)
+
+    # if output_fp:
+    #     with open(output_fp, 'wb') as f: pickle.dump(result, f)
+    # print('[DONE] save to:', output_fp)
+
 
     return result
 
@@ -395,6 +399,7 @@ def inference_one(models,
     surf_mask = data["surf_mask"].reshape(-1, RESO, RESO, 1)
     surf_bbox_wcs = data["surf_bbox"]
     surf_uv_bbox_wcs = data["surf_uv_bbox"]
+    _unedited_mask = data["unedited_mask"]
 
     # 这个衣服最开始有几个板片
     n_surfs_orig = len(surf_ncs)
@@ -463,8 +468,7 @@ def inference_one(models,
             if i >= n_surfs_orig:
                 raise ValueError("Wrone Input Index")
         _surf_z_mask[indices]=False
-        if "3" in mask_type:
-            _surf_pos_mask[0][indices] = False
+        _unedited_mask[indices] = False
         # 所有板片不参与dedup，Panel数量保持不变
         _not_dedup_mask = torch.ones((max_surf), dtype=torch.bool, device=device)
         _not_dedup_mask[n_surfs_orig:] = False
@@ -487,6 +491,7 @@ def inference_one(models,
                 raise ValueError("Wrone Input Index")
         _surf_z_mask[indices]=False
         _surf_pos_mask[0][indices] = False  # 和2的区别
+        _unedited_mask[indices]=False
         # 所有板片不参与dedup，Panel数量保持不变
         _not_dedup_mask = _surf_z_mask
         max_dedup_num = max_surf  # 和2的区别
@@ -638,20 +643,25 @@ def inference_one(models,
             surf_bbox_wcs = surf_bbox_wcs[dedup_unchanged_map[:, 0]]
             surf_uv_bbox_wcs = surf_uv_bbox_wcs[dedup_unchanged_map[:, 0]]
 
+            unedited_mask = _unedited_mask[dedup_unchanged_map[:, 0]]
+            pad_len = max_surf - n_surfs_unchanged
+            unedited_mask_padding = np.zeros(pad_len, dtype=np.bool)
+            _unedited_mask = np.concatenate([unedited_mask, unedited_mask_padding])
+
             # dedup时，如果对原有的BBox进行了编辑，会导致 _surf_z_mask 的总长度小于 max_surf, 需要选择用True还是False填充
             _surf_z_mask_padding = _surf_z_mask[-1]
             pad_len = max_surf - n_surfs_unchanged  # 填充的长度
             _surf_z_mask_padding = torch.ones(pad_len, dtype=torch.bool, device = device) if _surf_z_mask_padding else torch.zeros(pad_len, dtype=torch.bool, device=device)
 
-
             _surf_z_mask = _surf_z_mask[dedup_unchanged_map[:, 0]]
             # 后面pad的部分为True还是False没有意义，因为这部分Panels对应的_surf_panel_mask为True，这部分BBox的Geometry不会生成
             _surf_z_mask = torch.concatenate([_surf_z_mask, _surf_z_mask_padding])
 
-            # 有哪些板片重新生成了
-            _edited_mask = np.ones((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
-            _edited_mask[:n_surfs_unchanged] = False
-            _edited_mask[n_surfs:] = False
+            # # [TODO] 目前计算 edited_mask 计算方式有问题
+            # # 有哪些板片重新生成了
+            # _edited_mask = np.ones((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
+            # _edited_mask[:n_surfs_unchanged] = False
+            # _edited_mask[n_surfs:] = False
     else:
         # _surf_panel_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
         raise NotImplementedError
@@ -744,7 +754,7 @@ def inference_one(models,
         colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
         _surf_wcs_ = _denormalize_pts(_surf_ncs, _surf_bbox)
         # _surf_uv_wcs = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox)
-        draw_bbox_geometry( # [todo] 看
+        draw_bbox_geometry(
             bboxes = _surf_bbox,
             bbox_colors = colors,
             points = _surf_wcs_,
@@ -788,16 +798,90 @@ def inference_one(models,
         'surf_uv_ncs': _surf_uv_ncs,    # (N, 256*256, 2)
         'surf_mask': _surf_ncs_mask,    # (N, 256*256) => bool
         'caption': caption,             # str
-        'edited_mask': _edited_mask,    # (max_surfs)
-        "latent_code": surf_z           # (N, 64)
+        'unedited_mask': _unedited_mask,    # (max_surfs)
+        "latent_code": surf_z.detach().cpu().numpy().squeeze(0)        # (N, 64)
     }
 
-    if output_fp:
-        with open(output_fp, 'wb') as f: pickle.dump(result, f)
-    print('[DONE] save to:', output_fp)
+
+    # if output_fp:
+    #     with open(output_fp, 'wb') as f: pickle.dump(data, f)
+    # print('[DONE] save to:', output_fp)
 
     return result
 
+def del_panel(data, ):
+
+    indices = input("Enter panel indices for geometry changing:\n")
+    indices = indices.split(" ")
+    indices = [int(i) for i in indices]
+    for i in indices:
+        if i >= 32:
+            raise ValueError("Wrone Input Index")
+
+    rev_indices = [i for i in range(len(data["surf_ncs"])) if i not in indices]
+    for k in ["surf_ncs", "surf_uv_ncs", "surf_mask", "surf_bbox", "surf_uv_bbox", "latent_code"]:
+        if isinstance(data[k], np.ndarray):
+            data[k] = data[k][rev_indices]
+    rev_indices = [i for i in range(32) if i not in indices]
+    for k in ["unedited_mask"]:
+        data[k] = np.concatenate([data[k][rev_indices], data[k][indices]])
+        data[k][-len(indices):] = False
+    return data
+
+def save_data(data, output_fp):
+    _unedited_mask = data["unedited_mask"]
+
+    # 哪些panels被编辑过了
+    edited_mask= ~_unedited_mask
+    edited_mask[len(data["surf_bbox"]):] = False
+    data["edited_mask"] = edited_mask
+
+    # 计算哪些板片是被修改过的
+    if output_fp:
+        from copy import deepcopy
+        save_data = deepcopy(data)
+        del save_data["unedited_mask"]  # 冗余
+        with open(output_fp, 'wb') as f: pickle.dump(save_data, f)
+    print('[DONE] save to:', output_fp)
+
+
+def vis_data(data):
+    n_surfs = len(data["surf_bbox"])
+
+    # plotly visualization
+    colormap = plt.cm.coolwarm
+    colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
+
+    _surf_ncs = data["surf_ncs"]
+    _surf_uv_ncs = data["surf_uv_ncs"]
+    _surf_ncs_mask = data["surf_mask"]
+
+    _surf_bbox = data["surf_bbox"]
+    _surf_uv_bbox = data["surf_uv_bbox"]
+
+    caption = data["caption"]
+
+    _surf_wcs_ = _denormalize_pts(_surf_ncs, _surf_bbox)
+
+    _surf_uv_bbox_wcs_ = np.zeros((n_surfs, 6))
+    _surf_uv_bbox_wcs_[:, [0, 1, 3, 4]] = _surf_uv_bbox
+    _surf_uv_wcs_ = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox).reshape(n_surfs, -1, 2)
+    _surf_uv_wcs_ = np.concatenate([_surf_uv_wcs_, np.zeros((n_surfs,_surf_uv_wcs_.shape[-2], 1), dtype=np.float32)],axis=-1)
+
+    fig = draw_bbox_geometry_3D2D(
+        bboxes=[_surf_bbox, _surf_uv_bbox_wcs_],
+        bbox_colors=colors,
+        points=[_surf_wcs_, _surf_uv_wcs_],
+        point_masks=_surf_ncs_mask,
+        point_colors=colors,
+        num_point_samples=1000,
+        title=f"{caption}",
+        # output_fp=output_fp.replace('.pkl', '_pointcloud.png'),
+        show_num=True,
+        fig_show="browser"
+    )
+
+    return fig
 
 def run(args):
     """
@@ -820,12 +904,14 @@ def run(args):
                     #r 回到上一状态
 
     """
+    max_surf = 32
+
     models = init_models(args)
     os.makedirs(args.output_root, exist_ok=True)
     # caption_editing_list_dir = os.path.join(args.data_root, 'caption_editing_list')
     # list_fp_list = sorted(glob(os.path.join(caption_editing_list_dir, '*.txt')))
     # for list_fp in list_fp_list:
-    list_fp = "/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/editing/demo_caption_editing/data/addpart_changepart_lists/000_dress, sleeveless, round-neck.txt"
+    list_fp = "/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/editing/demo_caption_editing/data/addpart_changepart_lists/001_dress, a-line hem, fitted, sleeveless.txt"
 
     with open(list_fp, 'r', encoding='utf-8') as f:
         caption_list = [line.strip() for line in f]
@@ -842,6 +928,12 @@ def run(args):
             output_dir = os.path.join(output_root, "generated")
         output_fp = os.path.join(output_dir, f"{idx}".zfill(3)+f"_{caption}.pkl")
         os.makedirs(output_dir, exist_ok=True)
+
+        # 记录哪些板片未进行编辑（初始化）
+        _unedited_mask = np.zeros((max_surf), dtype=np.bool)
+        if data is not None:
+            _unedited_mask[:len(data["surf_bbox"])] = True
+            data["unedited_mask"] = _unedited_mask
 
         while True:
             print(f"Current caption: {caption}")
@@ -860,7 +952,7 @@ def run(args):
             # editing with mask
             elif "2" in user_input:
                 if data is None:
-                    data = init_inference(models, caption, output_fp=output_fp, vis=True)
+                    raise NotImplementedError
                 else:
                     history.append(data)
                     data = inference_one(models, data, caption, output_fp=output_fp, vis=True)
@@ -868,9 +960,17 @@ def run(args):
             elif "cc" in user_input:
                 new_caption = input("Input new caption:\n")
                 caption = new_caption
+                data["caption"] = caption
+                output_fp = os.path.join(output_dir, f"{idx}".zfill(3) + f"_{caption}.pkl")
             elif "#s" in user_input:
-                raise NotImplementedError
+                save_data(data, output_fp)
+            elif "#d" in user_input:
+                history.append(data)
+                data = del_panel(data)
+                vis_data(data)
+                a=1
             elif "#n" in user_input:
+                save_data(data, output_fp)
                 print(f"End     caption: {caption}")
                 break
             elif "#r" in user_input:
@@ -879,6 +979,13 @@ def run(args):
                     del history[-1]
             else:
                 continue
+
+            # 测试用
+            _unedited_mask = data["unedited_mask"]
+            a=1
+
+    print("All garment generated")
+
 
 if __name__ == "__main__":
 

@@ -325,7 +325,7 @@ def init_inference(models,
         colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
         _surf_wcs_ = _denormalize_pts(_surf_ncs, _surf_bbox)
         # _surf_uv_wcs = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox)
-        draw_bbox_geometry(  # [todo] 看
+        draw_bbox_geometry(
             bboxes=_surf_bbox,
             bbox_colors=colors,
             points=_surf_wcs_,

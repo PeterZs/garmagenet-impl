@@ -11,7 +11,7 @@ import pickle
 
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-
+from PIL import Image
 from matplotlib.colors import to_rgb
 
 import gc
@@ -40,6 +40,14 @@ _CMAP = {
 
 _PANEL_CLS = [
     '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头', '裙前中', '裙后中', '裙侧', '橡筋', '木耳边', '袖笼拼条', '荷叶边', '绑带']
+
+
+def _pad_arr(arr, pad_size=10, pad_value=0):
+    return np.pad(
+        arr,
+        ((pad_size, pad_size), (pad_size, pad_size), (0, 0)),   # pad size to each dimension, require tensor to have size (H,W, C)
+        mode='constant',
+        constant_values=pad_value)
 
 
 def _create_bounding_box_lines(min_point, max_point, color):
@@ -246,8 +254,8 @@ def draw_bbox_geometry(
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent plot background
         paper_bgcolor='rgba(0,0,0,0)'  # Transparent paper background
     )
-
-    if output_fp is not None: fig.write_image(output_fp, format='png')
+    print(output_fp)
+    if output_fp is not None: fig.write_image(output_fp, format='png', engine='kaleido')
     else: fig.show(fig_show)
 
     if output_fp is not None and fig_show is not None:
@@ -499,3 +507,101 @@ def pointcloud_visualize(vertices:np.array):
     )
 
     fig.show("browser")
+
+
+# 可视化作为 condition 的 PointCloud
+def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
+    assert vertices.ndim == 2 and vertices.shape[1] == 3, "vertices 应为 (N, 3) 的 numpy 数组"
+
+    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+    color = "#717388"  # 用 z 来着色
+    xrange = x.max() - x.min()
+    yrange = y.max() - y.min()
+    zrange = z.max() - z.min()
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x, y=y, z=z,
+            mode='markers',
+            marker=dict(
+                size=2,
+                color=color,
+                colorscale='Viridis',
+                opacity=1,
+                showscale=False  # 不显示 colorbar
+            ),
+            showlegend=False  # 不显示图例
+        )
+    ])
+
+    # 隐藏坐标轴、网格、背景等
+    axis_style = dict(
+        showbackground=False,
+        showgrid=False,
+        zeroline=False,
+        showline=False,
+        ticks='',
+        showticklabels=False,
+        visible=False  # 最直接隐藏整个轴
+    )
+    camera = dict(
+        up=dict(x=0, y=1, z=0),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(x=0, y=0, z=2)
+    )
+    fig.update_layout(
+        scene=dict(
+            xaxis=axis_style,
+            yaxis=axis_style,
+            zaxis=axis_style,
+            aspectmode='manual',
+            aspectratio=dict(
+                x=xrange,
+                y=yrange,
+                z=zrange
+            )
+        ),
+        scene_camera=camera,
+        margin=dict(l=0, r=0, t=0, b=0),
+        showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    RESO = 800
+    if output_fp:
+        # fig.write_html(output_fp.replace(".pkl", "") + "_pcCond_vis.html")
+        fig.write_image(output_fp.replace(".pkl", "") + "_pcCond.png", width=RESO, height=RESO, scale=2.5)
+
+def draw_per_panel_geo_imgs(surf_ncs, surf_mask, colors, pad_size=5, out_dir=''):
+    n_surfs = surf_ncs.shape[0]
+    reso = int(surf_ncs.shape[1] ** 0.5)
+
+    framed_imgs = []
+
+    _surf_ncs = surf_ncs.reshape(n_surfs, reso, reso, 3)
+    _surf_mask = surf_mask.reshape(n_surfs, reso, reso, 1)
+
+    for idx in range(n_surfs):
+        mask_img = _surf_mask[idx, ...].astype(np.float32)
+        _inv_mask_img = 1.0 - mask_img
+
+        _padded_mask = _pad_arr(_inv_mask_img * 0.33, pad_size=pad_size, pad_value=1.0)
+
+        _cur_color = colors[idx]
+        if type(_cur_color) is str: _cur_color = to_rgb(_cur_color)
+
+        _bg_img = np.zeros_like(_padded_mask.repeat(3, axis=-1)) + np.asarray(_cur_color)[None, None, :3]
+        _bg_img = np.concatenate([_bg_img * _padded_mask, _padded_mask], axis=-1)
+
+        _fg_img = np.concatenate([(np.clip(_surf_ncs[idx, ...], -1.0, 1.0) + 1.0) * 0.5, _surf_mask[idx, ...]], axis=-1)
+        _fg_img = _pad_arr(_fg_img, pad_size=pad_size, pad_value=0.0)
+
+        fused_img = _bg_img + _fg_img
+
+        framed_imgs.append(fused_img)
+
+        fused_pil_img = Image.fromarray((fused_img * 255).astype(np.uint8))
+
+        os.makedirs(out_dir, exist_ok=True)
+        fused_pil_img.save(os.path.join(out_dir, f'surf_{idx:02d}.png'))
+
+    return framed_imgs

@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
-
 import transformers
+from PIL import Image
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.utils import BaseOutput, is_torch_version
 from diffusers.utils.accelerate_utils import apply_forward_hook
@@ -256,6 +256,9 @@ class AutoencoderKLFastDecode(ModelMixin, ConfigMixin):
         return decoded    
 
 
+
+
+
 class TextEncoder:
     def __init__(self, encoder='CLIP', device='cuda'):
 
@@ -356,10 +359,11 @@ class TextEncoder:
             )
 
             text_input_ids = text_inputs.input_ids
+            # print(text_input_ids)
             untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
             if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
                 removed_text = self.tokenizer.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
-            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=False)
+            prompt_embeds = self.text_encoder(input_ids=text_input_ids.to(self.device), output_hidden_states=False)
 
             # Use pooled output of CLIPTextModel
             prompt_embeds = prompt_embeds.pooler_output
@@ -402,6 +406,54 @@ class PointcloudEncoder:
     def __call__(self, point_cloud):
         return self.pointcloud_embedder_fn(point_cloud)
 
+
+class SketchEncoder:
+    def __init__(self, encoder='LAION2B', device="cuda:0"):
+        self.device = device
+        if encoder == 'LAION2B':
+            import timm
+            from safetensors import safe_open
+            from src.models.sketch_feature_extractor.vit.utils.sketch_utils import _transform
+
+            image_resolution = 224
+            self.img_process = _transform(image_resolution)
+
+            self.sketch_emb_dim = 1280
+            VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
+            # 使用timm创建模型架构
+            safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
+            vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
+            vit_model.eval()
+
+            # 加载 safetensors 权重
+            with safe_open(safetensors_path, framework="pt") as f:
+                # safetensors 返回一个字典，包含所有张量
+                state_dict = {key: f.get_tensor(key) for key in f.keys()}
+                vit_model.load_state_dict(state_dict)
+            self.sketch_encoder = vit_model
+            self.sketch_embedder_fn = self._get_laion2b_sketch_embeds
+        elif encoder == 'RADIO_V2.5-G':
+            self.sketch_emb_dim = 1536
+            self.sketch_encoder = None
+            self.sketch_embedder_fn = None
+        else:
+            raise NotImplementedError
+        # Test encoding text
+        print(f"[DONE] Init {encoder} text encoder.")
+
+    def _get_laion2b_sketch_embeds(
+            self,
+            sketch_fp
+    ):
+        image = Image.open(sketch_fp).convert('RGB')
+        image =  self.img_process(image)
+        image = image.to(self.device).unsqueeze(0)
+        sketch_features = self.sketch_encoder.forward_features(image).squeeze()
+        sketch_features = sketch_features[0].unsqueeze(0)
+        return sketch_features
+
+    def __call__(self, sketch_fp):
+        return self.sketch_embedder_fn(sketch_fp)
 
 
 class SurfPosNet(nn.Module):
@@ -479,7 +531,7 @@ class SurfPosNet(nn.Module):
         pred = self.fc_out(output)
 
         return pred
-    
+
 
 class SurfZNet(nn.Module):
     """

@@ -45,7 +45,7 @@ def get_args_ldm():
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help="Text encoder when applying text as generation condition.")
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
-    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B'], help="")
+    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G"], help="")
     parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="Text encoder when applying text as generation condition.")
 
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')

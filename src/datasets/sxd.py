@@ -1,6 +1,6 @@
 import os
-import math
-import random
+# import math
+# import random
 import pickle
 import torch
 import numpy as np
@@ -8,15 +8,15 @@ from tqdm import tqdm
 from glob import glob
 import random
 from src.network import PointcloudEncoder
-from multiprocessing.pool import Pool
-from utils import (
-    rotate_point_cloud,
-    bbox_corners,
-    rotate_axis,
-    get_bbox,
-    pad_repeat,
-    pad_zero,
-)
+# from multiprocessing.pool import Pool
+# from utils import (
+#     rotate_point_cloud,
+#     bbox_corners,
+#     rotate_axis,
+#     get_bbox,
+#     pad_repeat,
+#     pad_zero,
+# )
 
 # furniture class labels
 _CMAP = {
@@ -203,12 +203,11 @@ class SurfPosData(torch.utils.data.Dataset):
                 print('*** data_list: ', self.data_list[0])
                 # if self.validate: self.data_list = random.choices(self.data_list, k=128)
             print('Total items: ', len(self.data_list))
-            # self.data_list = self.data_list[:60]  # [TODO] 删掉
             self.__load_all__()
 
 
     def __load_one__(self, data_fp):
-
+        data_dict = {}
         with open(data_fp, 'rb') as f: data = pickle.load(f)
 
         # Load surfpos
@@ -230,8 +229,8 @@ class SurfPosData(torch.utils.data.Dataset):
             surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
             surf_mask = data["surf_mask"].reshape(n_surfs, -1)
             valid_pts = surf_wcs[surf_mask]
-            sampled_pts = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
-            pointcloud_feature = self.pointcloud_encoder(sampled_pts)
+            sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            pointcloud_feature = self.pointcloud_encoder(sampled_pc_cond)
 
         if "sketch_feature" in self.data_fields:
             data_fp = data["data_fp"]
@@ -255,22 +254,25 @@ class SurfPosData(torch.utils.data.Dataset):
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
         if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
 
+
         return (
             torch.FloatTensor(surf_pos),
             torch.LongTensor(surf_cls),
             torch.FloatTensor(pointcloud_feature) if 'pointcloud_feature' in self.data_fields else None,
+            sampled_pc_cond if 'pointcloud_feature' in self.data_fields else None,
             torch.FloatTensor(sketch_feature) if 'sketch_feature' in self.data_fields else None,
-            caption
+            caption,
+            data["data_fp"]
         )
 
 
     def __load_all__(self):
-        cache = {'surf_pos': [], 'surf_cls': [], "pointcloud_feature": [], "sketch_feature": [], 'caption': [], 'item_idx': []}
+        cache = {'surf_pos': [], 'surf_cls': [], "pointcloud_feature": [], 'sampled_pc_cond': [], "sketch_feature": [], 'caption': [], 'item_idx': [], "data_fp": []}
         start_idx, end_idx = 0, 0
         for uid in tqdm(self.data_list):
             data_fp = uid
             try:
-                surf_pos, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
+                surf_pos, surf_cls, pointcloud_feature, sampled_pc_cond, sketch_feature, caption, data_fp_orig = self.__load_one__(data_fp)
                 assert surf_pos.shape[0]<=self.max_face
                 start_idx = end_idx
                 end_idx = start_idx + surf_pos.shape[0]
@@ -278,8 +280,10 @@ class SurfPosData(torch.utils.data.Dataset):
                 cache['surf_cls'].append(surf_cls)
                 cache['caption'].append(caption)
                 cache['pointcloud_feature'].append(pointcloud_feature)
+                cache['sampled_pc_cond'].append(sampled_pc_cond)
                 cache['sketch_feature'].append(sketch_feature)
                 cache['item_idx'].append((start_idx, end_idx))
+                cache['data_fp'].append(data_fp_orig)
             except Exception as e:
                 print(f"Error loading {data_fp}: {e}")
                 continue
@@ -288,6 +292,7 @@ class SurfPosData(torch.utils.data.Dataset):
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
         if "pointcloud_feature" in self.data_fields:
             cache['pointcloud_feature'] = torch.cat(cache['pointcloud_feature'], dim=0)
+            cache['sampled_pc_cond'] = np.stack(cache['sampled_pc_cond'], axis=0)
         if "sketch_feature" in self.data_fields:
             cache['sketch_feature'] = torch.cat(cache['sketch_feature'], dim=0)
         self.cache = cache
@@ -307,7 +312,7 @@ class SurfPosData(torch.utils.data.Dataset):
             surf_cls = torch.cat([surf_cls, surf_cls[pad_idx, ...]], dim=0)[rand_idx, ...]
             pad_mask = torch.cat([
                 torch.zeros(n_surfs, dtype=bool), torch.ones(n_pads, dtype=bool)
-            ], dim=0)[rand_idx, ...]
+                ], dim=0)[rand_idx, ...]
 
         elif self.padding == 'zero':
             pad_idx = torch.randperm(n_surfs)
@@ -449,7 +454,7 @@ class SurfZData(torch.utils.data.Dataset):
         with torch.no_grad():
             self.zero_latent = self.z_encoder(
                 torch.zeros((1, self.num_channels, self.resolution, self.resolution), device=z_device)
-            ).flatten(start_dim=1).detach().cpu()
+                ).flatten(start_dim=1).detach().cpu()
 
         print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
 
@@ -478,8 +483,8 @@ class SurfZData(torch.utils.data.Dataset):
             surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
             surf_mask = data["surf_mask"].reshape(n_surfs, -1)
             valid_pts = surf_wcs[surf_mask]
-            sampled_pts = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
-            pointcloud_feature = self.pointcloud_encoder(sampled_pts)
+            sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            pointcloud_feature = self.pointcloud_encoder(sampled_pc_cond)
 
         if "sketch_feature" in self.data_fields:
             data_fp = data["data_fp"]
@@ -517,8 +522,10 @@ class SurfZData(torch.utils.data.Dataset):
             torch.FloatTensor(surf_ncs),
             torch.LongTensor(surf_cls),
             torch.FloatTensor(pointcloud_feature) if 'pointcloud_feature' in self.data_fields else None,
+            sampled_pc_cond if 'pointcloud_feature' in self.data_fields else None,
             torch.FloatTensor(sketch_feature) if 'sketch_feature' in self.data_fields else None,
-            caption
+            caption,
+            data["data_fp"]
         )
 
     def __pad_latents__(self, surf_pos, surf_latents, surf_cls):
@@ -533,7 +540,7 @@ class SurfZData(torch.utils.data.Dataset):
             surf_cls = torch.cat([surf_cls, surf_cls[pad_idx, ...]], dim=0)[rand_idx, ...]
             pad_mask = torch.cat([
                 torch.zeros(n_surfs, dtype=bool), torch.ones(n_pads, dtype=bool)
-            ], dim=0)[rand_idx, ...]
+                ], dim=0)[rand_idx, ...]
 
         elif self.padding == 'zero':
             pad_idx = torch.randperm(n_surfs)
@@ -630,16 +637,18 @@ class SurfZData(torch.utils.data.Dataset):
             'surf_cls': [],
             'caption': [],
             'pointcloud_feature': [],
+            'sampled_pc_cond': [],
             'sketch_feature': [],
-            'item_idx': []  # start and end index of each item in the cache
-        }
+            'item_idx': [],  # start and end index of each item in the cache
+            'data_fp': []
+            }
 
         start_idx, end_idx = 0, 0
         for data_id in tqdm(self.data_list):
 
             data_fp = os.path.join(self.data_root, data_id)
             try:
-                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
+                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sampled_pc_cond, sketch_feature, caption, data_fp_orig = self.__load_one__(data_fp)
                 assert surf_pos.shape[0] <= self.max_face
                 with torch.no_grad():
                     z = self.z_encoder(surf_ncs.permute(0, 3, 1, 2).to(z_device)).flatten(start_dim=1)
@@ -653,8 +662,10 @@ class SurfZData(torch.utils.data.Dataset):
                 cache['item_idx'].append((start_idx, end_idx))
                 cache['data_id'].append(data_id)
                 cache['pointcloud_feature'].append(pointcloud_feature)
+                cache['sampled_pc_cond'].append(sampled_pc_cond)
                 cache['sketch_feature'].append(sketch_feature)
                 cache['latent'].append(z.to(surf_pos.device).to(surf_pos.dtype))
+                cache['data_fp'].append(data_fp_orig)
 
             except Exception as e:
                 print(f"Error loading {data_fp}: {e}")
@@ -665,6 +676,7 @@ class SurfZData(torch.utils.data.Dataset):
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
         if "pointcloud_feature" in self.data_fields:
             cache['pointcloud_feature'] = torch.cat(cache['pointcloud_feature'], dim=0)
+            cache['sampled_pc_cond'] = np.stack(cache['sampled_pc_cond'], axis=0)
         if "sketch_feature" in self.data_fields:
             cache['sketch_feature'] = torch.cat(cache['sketch_feature'], dim=0)
 
@@ -682,7 +694,7 @@ class SurfZData(torch.utils.data.Dataset):
             with torch.no_grad():
                 self.zero_latent = self.z_encoder(
                     torch.zeros((1, self.num_channels, self.resolution, self.resolution), device=z_device)
-                ).flatten(start_dim=1).detach().cpu()
+                    ).flatten(start_dim=1).detach().cpu()
             print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
 
         del self.z_encoder
@@ -705,21 +717,24 @@ class SurfZData(torch.utils.data.Dataset):
         torch.cuda.empty_cache()
 
         cache = {
+            'data_id': [],
             'surf_pos': [],
             'surf_ncs': [],
+            'latent': [],
             'surf_cls': [],
             'caption': [],
             'pointcloud_feature': [],
+            'sampled_pc_cond': [],
             'sketch_feature': [],
-            'item_idx': []  # start and end index of each item in the cache
+            'item_idx': [],  # start and end index of each item in the cache
+            'data_fp': []
         }
-
         start_idx, end_idx = 0, 0
         for uid in tqdm(self.data_chunks[self.chunk_idx]):
             data_fp = uid
 
             try:
-                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sketch_feature, caption = self.__load_one__(data_fp)
+                surf_pos, surf_ncs, surf_cls, pointcloud_feature, sampled_pc_cond, sketch_feature, caption, data_fp_orig = self.__load_one__(data_fp)
 
                 start_idx = end_idx
                 end_idx = start_idx + surf_pos.shape[0]
@@ -727,10 +742,13 @@ class SurfZData(torch.utils.data.Dataset):
                 cache['surf_pos'].append(surf_pos)
                 cache['surf_ncs'].append(surf_ncs)
                 cache['surf_cls'].append(surf_cls)
+                cache['data_id'].append(uid)
                 cache['caption'].append(caption)
-                cache["pointcloud_feature"].append(pointcloud_feature)
+                cache['pointcloud_feature'].append(pointcloud_feature)
+                cache['sampled_pc_cond'].append(sampled_pc_cond)
                 cache["sketch_feature"].append(sketch_feature)
                 cache['item_idx'].append((start_idx, end_idx))
+                cache['data_fp'].append(data_fp_orig)
 
             except Exception as e:
                 print(f"Error loading {data_fp}: {e}")
@@ -741,6 +759,7 @@ class SurfZData(torch.utils.data.Dataset):
         cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
         if "pointcloud_feature" in self.data_fields:
             cache["pointcloud_feature"] = torch.cat(cache["pointcloud_feature"], dim=0)
+            cache['sampled_pc_cond'] = np.stack(cache['sampled_pc_cond'], axis=0)
         if "sketch_feature" in self.data_fields:
             cache["sketch_feature"] = torch.cat(cache["sketch_feature"], dim=0)
 

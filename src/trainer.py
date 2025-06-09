@@ -1,22 +1,11 @@
 import os
 import wandb
 from tqdm import tqdm
-from glob import glob
-
-from typing import Any, Callable, Dict, List, Optional, Union
-
-import torch
-import torch.nn as nn 
 from torchvision.utils import make_grid
-import torchvision.transforms.functional as F
 from diffusers import AutoencoderKL, DDPMScheduler
 from src.network import *
 from src.utils import get_wandb_logging_meta
 
-# visualization utils
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import plotly.express as px
 
 class SurfVAETrainer():
     """ Surface VAE Trainer """
@@ -59,7 +48,7 @@ class SurfVAETrainer():
             elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
             else: model.load_state_dict(state_dict)
             print('Load SurfZNet checkpoint from %s.'%(args.weight))
-            
+
         self.model = model.to(self.device).train()
 
         # Initialize optimizer
@@ -72,7 +61,7 @@ class SurfVAETrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, args.expr,'wandb'))
+        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
         wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
         self.iters = run_step
 
@@ -86,8 +75,16 @@ class SurfVAETrainer():
                                              batch_size=self.batch_size,
                                              num_workers=8)
 
-        self.epoch = self.iters // len(self.train_dataloader)
-        return
+        # Get Current Epoch
+        try:
+            self.epoch = int(os.path.basename(args.weight).split("_e")[1].split(".")[0])
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+        except Exception:
+            self.epoch = self.iters // len(self.train_dataloader)
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+            print("This may cause error if batch size has changed.")
 
     
     def train_one_epoch(self):
@@ -108,14 +105,13 @@ class SurfVAETrainer():
                 self.optimizer.zero_grad() # zero gradient
 
                 # Pass through VAE
-                # Garmage编码得到分布，从分布中采样出Z，Z解码得到Garmage
                 posterior = self.model.encode(surf_uv).latent_dist
                 z = posterior.sample()      # = posterior.mean + torch.randn_like(posterior.std)*posterior.std
                 dec = self.model.decode(z).sample
 
                 # Loss functions
-                kl_loss = posterior.kl().mean()  # posterior.kl() 返回当前批次中每个Garmage的KL散度，然后求平均值
-                mse_loss = loss_fn(dec, surf_uv)  # 同时计算Garmage编码解码后的误差
+                kl_loss = posterior.kl().mean()
+                mse_loss = loss_fn(dec, surf_uv)
                 total_loss = mse_loss + 1e-6*kl_loss
 
                 # Update model
@@ -202,7 +198,25 @@ class SurfVAETrainer():
             self.model.state_dict(), 
             os.path.join(ckpt_log_dir, f'vae_e{self.epoch:04d}.pt'))
         return
-    
+
+
+def get_condition_dim(args, self):
+    if args.text_encoder is not None:
+        condition_dim = self.text_encoder.text_emb_dim
+    elif args.pointcloud_encoder is not None:
+        condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
+    elif args.sketch_encoder is not None:
+        if args.sketch_encoder == "LAION2B":
+            condition_dim = 1280
+        elif args.sketch_encoder == "RADIO_V2.5-G":
+            condition_dim = 1536
+        else:
+            raise NotImplementedError("args.sketch_encoder name wrong.")
+    else:
+        condition_dim = -1
+
+    return condition_dim
+
     
 class SurfPosTrainer():
     """ Surface Position Trainer (3D bbox) """
@@ -214,30 +228,17 @@ class SurfPosTrainer():
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.bbox_scaled = args.bbox_scaled
 
-        # Initialize text encoder
+        # Initialize condition encoder
         if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
         if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
         if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
-        assert args.text_encoder is None or args.pointcloud_encoder is None or args.sketch_encoder is None
 
-        if hasattr(self, 'text_encoder'):
-            condition_dim = self.text_encoder.text_emb_dim
-        elif hasattr(self, 'pointcloud_encoder'):
-            condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
-        elif args.sketch_encoder is not None:
-            if args.sketch_encoder == "LAION2B":
-                condition_dim = 1280
-            else:
-                raise NotImplementedError("args.sketch_encoder name wrong.")
-        else:
-            condition_dim = -1
-
+        condition_dim = get_condition_dim(args, self)
 
         # Initialize network
         self.pos_dim = train_dataset.pos_dim
-
         model = SurfPosNet(
-            p_dim=self.pos_dim * 2,
+            p_dim=self.pos_dim*2,
             condition_dim=condition_dim,
             num_cf=train_dataset.num_classes)
 
@@ -289,11 +290,18 @@ class SurfPosTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(
             val_dataset, shuffle=False, batch_size=args.batch_size, num_workers=16)
 
-        self.epoch = self.iters // len(self.train_dataloader)
+        # Get Current Epoch
+        try:
+            self.epoch = int(os.path.basename(args.weight).split("_e")[1].split(".")[0])
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+        except Exception:
+            self.epoch = self.iters // len(self.train_dataloader)
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+            print("This may cause error if batch size has changed.")
+    
 
-        return
-    
-    
     def train_one_epoch(self):
         """
         Train the model for one epoch
@@ -445,18 +453,8 @@ class SurfZTrainer():
         if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
         if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
         if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
-        assert args.text_encoder is None or args.pointcloud_encoder is None or args.sketch_encoder is None
-        if hasattr(self, 'text_encoder'):
-            condition_dim = self.text_encoder.text_emb_dim
-        elif hasattr(self, 'pointcloud_encoder'):
-            condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
-        elif args.sketch_encoder is not None:
-            if args.sketch_encoder == "LAION2B":
-                condition_dim = 1280
-            else:
-                raise NotImplementedError("args.sketch_encoder name wrong.")
-        else:
-            condition_dim = -1
+
+        condition_dim = get_condition_dim(args, self)
 
         # Load pretrained surface vae (fast encode version)
         surf_vae_encoder = AutoencoderKLFastEncode(
@@ -547,9 +545,16 @@ class SurfZTrainer():
                                              batch_size=self.batch_size,
                                              num_workers=16)
 
-        self.epoch = self.iters // len(self.train_dataloader)
-
-        return
+        # Get Current Epoch
+        try:
+            self.epoch = int(os.path.basename(args.weight).split("_e")[1].split(".")[0])
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+        except Exception:
+            self.epoch = self.iters // len(self.train_dataloader)
+            print("Resume epoch from args.weight.\n"
+                  f"Current epoch is: {self.epoch}")
+            print("This may cause error if batch size has changed.")
     
 
     def train_one_epoch(self):

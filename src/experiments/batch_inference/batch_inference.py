@@ -16,9 +16,10 @@ from matplotlib.colors import to_hex
 from src.network import AutoencoderKLFastDecode, SurfZNet, SurfPosNet, TextEncoder, PointcloudEncoder, SketchEncoder
 from diffusers import DDPMScheduler  # , PNDMScheduler
 from src.utils import randn_tensor
-from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D
+from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
 
 import plotly.graph_objects as go
+
 
 # 可视化作为 condition 的 PointCloud
 def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
@@ -187,11 +188,22 @@ def inference_one(
         dedup=True,
         vis=False,
         data_fp=None,
-        data_id_trainval=None
+        data_id_trainval=None,
+        save_denoising=False,
 ):
     batch_size = 1
-    device = args.device
     max_surf = 32
+    device = args.device
+
+
+    if save_denoising:
+        assert surf_pos_orig is None and dedup
+        denoising_dict = {}
+        vis_steps = get_visualization_steps()
+        denoising_dict["denoising_data"] = {k:{} for k in vis_steps}
+        denoising_dict["dedup_mask"] = np.zeros((max_surf), dtype=np.bool)  # 记录哪些BBox (为True的部分) 是被dedup掉的
+    else:
+        denoising_dict = None
 
     ddpm_scheduler = models['ddpm_scheduler']
     surfz_model = models['surfz_model']
@@ -226,6 +238,11 @@ def inference_one(
                 pred = surfpos_model(surfPos, timesteps, condition=condition_emb)
                 surfPos = ddpm_scheduler.step(pred, t, surfPos).prev_sample
 
+                # 保存去噪过程
+                if save_denoising:
+                    if t.item() in denoising_dict["denoising_data"].keys():
+                        denoising_dict["denoising_data"][t.item()]["surf_pos"] = surfPos.squeeze(0).detach().cpu().numpy()
+
         # # [test] vis BBox
         # colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, max_surf)]
         # _surf_pos_ = surfPos[:, :]
@@ -241,12 +258,16 @@ def inference_one(
         # )
 
         if dedup:
-            bbox_threshold = 0.08
+            if args.padding == "repeat":
+                bbox_threshold = 0.08
+            elif args.padding == "zero":
+                bbox_threshold = 2e-4
+
             _surf_pos = surfPos
-            bboxes = np.round(
-                torch.concatenate(
+
+            bboxes = torch.concatenate(
                     [_surf_pos[0][:, :6].unflatten(-1, torch.Size([2, 3])), _surf_pos[0][:, 6:].unflatten(-1, torch.Size([2, 2]))]
-                    , dim=-1).detach().cpu().numpy(), 4)
+                        , dim=-1).detach().cpu().numpy()
 
             non_repeat = None
             for bbox_idx, bbox in enumerate(bboxes):
@@ -260,29 +281,45 @@ def inference_one(
                         diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., -2:], -1), -1)  # [...,-2:]
                         same_rev = diff_rev < bbox_threshold
                         if same.sum() >= 1 or same_rev.sum() >= 1:
-                            continue
-                        non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
+                            is_deduped = True # 当前BBox是否被去重了
+                        else:
+                            is_deduped = False
+                            non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
 
                 if args.padding=="zero":
                     # （2D）判断BBox的大小是否非0
-                    bbox_threshold = 2e-4
-                    assert bbox_threshold >= 0. and bbox_threshold <= 1.
                     v = 1
                     for h in (bbox[1] - bbox[0])[3:]:
                         v *= h
                     if v < bbox_threshold:
-                        continue
+                        is_deduped = True
                     else:
+                        is_deduped = False
                         if non_repeat is None:
                             non_repeat = bbox[np.newaxis, :, :]
                         else:
                             non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
 
+                if save_denoising:
+                    denoising_dict["dedup_mask"][bbox_idx] = is_deduped
+
             bboxes = np.concatenate([non_repeat[:, :, :3].reshape(len(non_repeat), -1), non_repeat[:, :, 3:].reshape(len(non_repeat), -1)], axis=-1)
             surf_mask = torch.zeros((1, len(bboxes))) == 1
             _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - len(bboxes), 10)]).unsqueeze(0)
             _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - len(bboxes)) == 0], -1)
-        n_surfs = torch.sum(~_surf_mask)
+            n_surfs = torch.sum(~_surf_mask)
+
+            if save_denoising:
+                """
+                将同样的去重应用到去噪过程中保存的每一步中
+                然后保存
+                """
+                assert n_surfs == sum(~denoising_dict["dedup_mask"])
+                for step in denoising_dict["denoising_data"].keys():
+                    denoising_dict["denoising_data"][step]["surf_pos"] = (
+                        denoising_dict["denoising_data"][step]["surf_pos"][~denoising_dict["dedup_mask"]])
+                del denoising_dict['dedup_mask']
+
     # 如果使用原有的BBox
     else:
         n_surfs = torch.tensor(len(surf_pos_orig))
@@ -299,6 +336,12 @@ def inference_one(
             pred = surfz_model(
                 _surf_z, timesteps, _surf_pos.to(device), _surf_mask.to(device), condition_emb, is_train=False)
             _surf_z = ddpm_scheduler.step(pred, t, _surf_z).prev_sample
+
+            # 保存去噪过程
+            if save_denoising:
+                if t.item() in denoising_dict["denoising_data"].keys():
+                    denoising_dict["denoising_data"][t.item()]["surf_z_latent"] = _surf_z[0,:n_surfs].detach().cpu().numpy()
+
     _surf_z = _surf_z[:,:n_surfs]
 
     # VAE Decoding
@@ -326,10 +369,10 @@ def inference_one(
     colormap = plt.cm.coolwarm
 
     _surf_bbox = _surf_pos.squeeze(0)[~_surf_mask.squeeze(0), :].detach().cpu().numpy()
-    _decoded_surf_pos = decoded_surf_pos.permute(0, 2, 3, 1).detach().cpu().numpy()
-    _surf_ncs_mask = _decoded_surf_pos[..., -1:].reshape(n_surfs, -1) > 0.0
-    _surf_ncs = _decoded_surf_pos[..., :3].reshape(n_surfs, -1, 3)
-    _surf_uv_ncs = _decoded_surf_pos[..., 3:5].reshape(n_surfs, -1, 2)
+    _decoded_surf = decoded_surf_pos.permute(0, 2, 3, 1).detach().cpu().numpy()
+    _surf_ncs = _decoded_surf[..., :3].reshape(n_surfs, -1, 3)
+    _surf_uv_ncs = _decoded_surf[..., 3:5].reshape(n_surfs, -1, 2)
+    _surf_ncs_mask = _decoded_surf[..., -1:].reshape(n_surfs, -1) > 0.0
 
     _surf_uv_bbox = _surf_bbox[..., 6:]
     _surf_bbox = _surf_bbox[..., :6]
@@ -372,7 +415,9 @@ def inference_one(
         'surf_uv_ncs': _surf_uv_ncs,    # (N, 256*256, 2)
         'surf_mask': _surf_ncs_mask,    # (N, 256*256) => bool
         'caption': caption,             # str
-        'data_fp': data_fp
+        'data_fp': data_fp,
+        'denoising': denoising_dict,
+        'args': vars(args)
     }
 
     if output_fp:
@@ -446,7 +491,8 @@ def run(args):
             output_fp = output_fp,
             vis=True,
             data_fp=data_fp,
-            data_id_trainval=data_id_trainval
+            data_id_trainval=data_id_trainval,
+            save_denoising=args.save_denoising,
         )
 
     print('[DONE]')
@@ -478,6 +524,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--output', type=str, default='generated/surfz_e230000',
         help='Path to output directory')
+    parser.add_argument('--save_denoising', action="store_true", help='Save garmage during denoising.')
 
     parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=1, help='Latent channels of the vae model.')

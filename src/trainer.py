@@ -24,7 +24,7 @@ class SurfVAETrainer():
 
         assert train_dataset.num_channels == val_dataset.num_channels, \
             'Expecting same dimensions for train and val dataset, got %d (train) and %d (val).'%(train_dataset.num_channels, val_dataset.num_channels)
-        
+
         num_channels = train_dataset.num_channels
         sample_size = train_dataset.resolution
         latent_channels = args.latent_channels
@@ -170,12 +170,23 @@ class SurfVAETrainer():
                 if val_images is None and dec.shape[0] > 16:
                     sample_idx = torch.randperm(dec.shape[0])[:16]
                     val_images = make_grid(dec[sample_idx, ...], nrow=8, normalize=True, value_range=(-1,1))
-                    
+
                     vis_log = {}
                     if 'surf_ncs' in self.data_fields: vis_log['Val-Geo'] = wandb.Image(val_images[:3, ...], caption="Geometry output.")
+                    if 'surf_wcs' in self.data_fields:
+                        val_images2 = make_grid(dec[sample_idx, :3], nrow=8, normalize=False)
+                        val_images2[val_images2 != 0.0] = (val_images2[val_images2 != 0.0] + 1) / 2
+                        vis_log['Val-Geo-WCS'] = wandb.Image(val_images2[:3, ...], caption="Geometry WCS output.")
+                        # sampled_wcs = dec[sample_idx, ...][:,:3]
+                        # valid_pts = sampled_wcs[(torch.abs(sampled_wcs[:,0:1,...])>0.01).repeat(1,3,1,1)]
+                        # value_range = (torch.min(sampled_wcs[sampled_wcs!=0.0]),torch.max(sampled_wcs[sampled_wcs!=0.0]))
+                        # wcs_norm = make_grid(sampled_wcs, nrow=8, normalize=True, value_range=value_range)
+                        # vis_log['Val-Geo'] = wandb.Image(wcs_norm[:3, ...], caption="Geometry output.")
                     if 'surf_uv_ncs' in self.data_fields: vis_log['Val-UV'] = wandb.Image(val_images[-3:, ...], caption="UV output.")
                     if 'surf_normals' in self.data_fields: vis_log['Val-Normal'] = wandb.Image(val_images[3:6, ...], caption="Normal output.")
                     if 'surf_mask' in self.data_fields: vis_log['Val-Mask'] = wandb.Image(val_images[-1:, ...], caption="Mask output.")                        
+
+
                     wandb.log(vis_log, step=self.iters)
     
         mse = total_loss/total_count
@@ -187,7 +198,7 @@ class SurfVAETrainer():
                                              shuffle=False, 
                                              batch_size=self.batch_size,
                                              num_workers=8)    
-        
+
         return mse
     
     

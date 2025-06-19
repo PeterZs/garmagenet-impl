@@ -77,7 +77,11 @@ class SurfData(torch.utils.data.Dataset):
                  validate=False,
                  aug=False,
                  chunksize=-1,
-                 use_data_root=False):
+                 args=None,
+                 use_data_root=False,):
+        self.args = args
+
+        self.randomly_noise_geometry = args.randomly_noise_geometry
 
         self.validate = validate
         self.aug = aug
@@ -121,7 +125,9 @@ class SurfData(torch.utils.data.Dataset):
                 with open(path, "rb") as tf: data = pickle.load(tf)
 
                 surf_ncs = []
+                # NCS VAE
                 if 'surf_ncs' in self.data_fields: surf_ncs.append(data['surf_ncs'].astype(np.float32))
+                if 'surf_wcs' in self.data_fields: surf_ncs.append(data['surf_wcs'].astype(np.float32))
                 if 'surf_uv_ncs' in self.data_fields: surf_ncs.append(data['surf_uv_ncs'].astype(np.float32))
                 if 'surf_normals' in self.data_fields: surf_ncs.append(data['surf_normals'].astype(np.float32))
                 if 'surf_mask' in self.data_fields: surf_ncs.append(data['surf_mask'].astype(np.float32)*2.0-1.0)
@@ -463,7 +469,6 @@ class SurfZData(torch.utils.data.Dataset):
     def __load_one__(self, data_fp):
 
         with open(data_fp, 'rb') as f: data = pickle.load(f)
-
         # Load surfpos
         surf_pos = []
         if 'surf_bbox_wcs' in self.data_fields: surf_pos.append(data['surf_bbox_wcs'].astype(np.float32))

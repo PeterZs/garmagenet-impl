@@ -16,6 +16,7 @@ def get_args_vae():
     parser.add_argument('--list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
                         help='Path to data list')  
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
+    parser.add_argument("--randomly_noise_geometry",  action='store_true', help='Randomly set geometry channel as noise.')
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
     parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
 
@@ -52,10 +53,10 @@ def run(args):
     # Initialize dataset loader and trainer
     train_dataset = SurfData(
         args.data, args.list, data_fields=args.data_fields, 
-        validate=False, aug=args.data_aug, chunksize=args.chunksize)
+        validate=False, aug=args.data_aug, chunksize=args.chunksize, args=args)
     val_dataset = SurfData(
         args.data, args.list, data_fields=args.data_fields, 
-        validate=True, aug=False, chunksize=args.chunksize)
+        validate=True, aug=False, chunksize=args.chunksize, args=args)
     vae = SurfVAETrainer(args, train_dataset, val_dataset)
 
     # Main training loop

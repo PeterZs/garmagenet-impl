@@ -544,6 +544,12 @@ class SurfZNet(nn.Module):
         self.out_dim = out_dim
         self.use_cf = num_cf > 0
         self.n_heads = num_heads
+        if isinstance(num_layer, List):
+            if len(num_layer) != 1:
+                raise ValueError("Length of num_layer should be 1.")
+            num_layer = num_layer[0]
+        self.num_layer = num_layer
+
 
         layer = nn.TransformerEncoderLayer(
             d_model=self.embed_dim, 
@@ -554,7 +560,7 @@ class SurfZNet(nn.Module):
             )
 
         self.net = nn.TransformerEncoder(
-            layer, num_layer, nn.LayerNorm(self.embed_dim))
+            layer, self.num_layer, nn.LayerNorm(self.embed_dim))
 
         if z_projector_dim<0:
             self.z_embed = nn.Sequential(
@@ -645,7 +651,7 @@ class SurfZNet(nn.Module):
 
 
 class SurfZNet_hunyuandit(nn.Module):
-    def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=12, num_cf=-1):
+    def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3,9], num_cf=-1):
         super(SurfZNet_hunyuandit, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
@@ -655,14 +661,19 @@ class SurfZNet_hunyuandit(nn.Module):
         # self.use_cf = num_cf > 0
         self.num_heads = num_heads
 
+        if not isinstance(num_layer, List):
+            raise TypeError("Type of num_layer should be list.")
+        if len(num_layer) != 2:
+            raise ValueError("Length of num_layer should be 2.")
+        self.num_layer = num_layer
         self.net = HunyuanDiT(
             in_channels=self.z_dim,
             pos_dim=self.p_dim,
             context_in_dim=self.condition_dim,
             hidden_size=self.embed_dim,
             num_heads=self.num_heads,
-            depth_double_blocks=3,
-            depth_single_blocks=9,
+            depth_double_blocks=self.num_layer[0],
+            depth_single_blocks=self.num_layer[1],
             mlp_ratio=4.0,
             qkv_bias=True,
             time_factor=1000,

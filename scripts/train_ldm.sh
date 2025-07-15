@@ -9,7 +9,25 @@
 
 # 256 lsr ===
 
-# 更换了 Hunyuan2.0 DIT 进行一些实验 ===   todo
+
+# 依旧是DIT的ldm，上一批实验疑似过拟合，减少几层试试 ===
+# SurfZ_HYdit Layer 2+4 latent256 zero padding xyz mask Q1-4 sketchCond(laion2b)
+# Z Bsize 188:1650
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/cache/vae_e0850_sketchCond_Q124_latent_16_16_1/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_HYdit_Layer_2_6_xyz_mask_pad_zero_sketchCond_latent_16_16_1 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 1000 \
+    --batch_size 1650 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --embed_dim 768 --num_layer 2 6 \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+
+
+
+# 更换了 Hunyuan2.0 DIT 进行一些实验 ===
 # SurfZ_HYdit zero padding xyz uv mask Q1-4 sketchCond(laion2b)
 # Z Bsize 188:1650
 export PYTHONPATH=/data/lsr/code/style3d_gen
@@ -28,8 +46,8 @@ export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
     --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
-    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0850_sketchCond_Q124_latent_16_16_1/encoder_mode \
-    --expr stylexdQ1Q2Q4_surfz_HYdit_xyzuv_pad_zero_sketchCond_latent_16_16_1 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 1000 \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/cache/vae_e0850_sketchCond_Q124_latent_16_16_1/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_HYdit_xyz_pad_zero_sketchCond_latent_16_16_1 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 1000 \
     --batch_size 1650 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 --latent_channels 1 --max_face 32 --sample_mode mode \
     --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
@@ -40,12 +58,14 @@ export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
     --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
-    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0850_sketchCond_Q124_latent_16_16_1/encoder_mode \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_1/cache/vae_e0850_sketchCond_Q124_latent_16_16_1/encoder_mode \
     --expr stylexdQ1Q2Q4_surfz_HYdit_xyzuv_pad_zero_sketchCond_latent_16_16_1 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 1000 \
     --batch_size 1650 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 --embed_dim 1536 --latent_channels 1 --max_face 32 --sample_mode mode \
     --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+
+
 
 # 对Q124的VAE进一步训练后，我在这个VAE上对之前训的两个SurfZ进行微调 ===
 # zero padding xyz uv mask Q1-4 sketchCond(laion2b) finetune on 4200 ckpt ===

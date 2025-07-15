@@ -157,8 +157,10 @@ def init_models(args):
         surfz_model = SurfZNet(
             p_dim=10,
             z_dim=latent_size**2*latent_channels,
+            embed_dim=args.embed_dim,
             num_heads=12,
             condition_dim=condition_dim,
+            num_layer=args.num_layer,
             num_cf=-1
             )
     elif args.surfz_type == 'hunyuan_dit':
@@ -166,8 +168,10 @@ def init_models(args):
         surfz_model = SurfZNet_hunyuandit(
             p_dim=10,
             z_dim=latent_size**2*latent_channels,
+            embed_dim=args.embed_dim,
             num_heads=12,
             condition_dim=condition_dim,
+            num_layer=args.num_layer,
             num_cf=-1
             )
     else:
@@ -601,7 +605,8 @@ if __name__ == "__main__":
     parser.add_argument('--reso', type=int, default=256, help='Sample size of the vae model.')
     parser.add_argument("--padding", type=str, default="repeat", choices=["repeat", "zero"], help='Padding type during surfPos training.')
     parser.add_argument('--num_samples', type=int, default=-1, help='Number of samples to inference.')
-
+    parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
+    parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
     parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help='Text encoder type.')
     parser.add_argument('--pointcloud_encoder', type=str, default=None, choices=[None, 'POINT_E'], help='Pointcloud encoder type.')
     parser.add_argument('--sketch_encoder', type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G"], help='Sketch encoder type.')

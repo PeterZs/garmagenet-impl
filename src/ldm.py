@@ -35,7 +35,12 @@ def get_args_ldm():
     parser.add_argument("--denoiser_type", type=str, choices=['default', 'hunyuan_dit'], default='default',
                         help="Choose ldm type.")
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
-    
+
+    """
+    fmed:   FlowMatchEulerDiscreteScheduler
+    """
+    parser.add_argument('--scheduler', type=str, default="ddpm",choices=["ddpm", "fmed"], help='ldm schedular type')
+
     # Training parameters
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')
@@ -64,9 +69,8 @@ def get_args_ldm():
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
     parser.add_argument('--sample_mode', type=str, default='sample', choices=['mode', 'sample'], help='Encoder mode of the vae model.')
-    parser.add_argument('--num_layer', type=int, default=12, help='Layer num of ldm model.')
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
-
+    parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')

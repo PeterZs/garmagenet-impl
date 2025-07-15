@@ -14,6 +14,16 @@ python src/experiments/batch_inference/batch_inference.py \
     --padding zero
 #    --save_denoising
 
+python src/experiments/batch_inference/batch_inference.py \
+    --vae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e4200.pt \
+    --surfpos log/stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_sketchCond/ckpts/surfpos_e59000.pt \
+    --surfz log/stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_sketchCond_finetune_vae_e4200/ckpts/surfz_e250000.pt \
+    --cache log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode/surfz_train.pkl \
+    --sketch_encoder LAION2B \
+    --output generated/xyzuv_pad_zero_sketchCond_surfz_e250000_train \
+    --padding zero
+
+
 
 # 2025_06_26 做Supplementary素材 ===
 # 我重新训练了VAE，在新的VAE上微调了Sketch、PC conditiond 的SurfZ

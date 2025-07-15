@@ -502,6 +502,7 @@ class SurfZTrainer():
                 num_heads=12,
                 embed_dim=args.embed_dim,
                 condition_dim=condition_dim,
+                num_layer=args.num_layer,
                 num_cf=train_dataset.num_classes
                 )
         elif args.denoiser_type == "hunyuan_dit":
@@ -512,6 +513,7 @@ class SurfZTrainer():
                 num_heads=12,
                 embed_dim=args.embed_dim,
                 condition_dim=condition_dim,
+                num_layer=args.num_layer,
                 num_cf=train_dataset.num_classes
                 )
         else:
@@ -536,16 +538,23 @@ class SurfZTrainer():
         self.loss_fn = nn.MSELoss()
 
         # Initialize diffusion scheduler
-        self.noise_scheduler = DDPMScheduler(
-            num_train_timesteps=1000,
-            beta_schedule='linear',
-            prediction_type='epsilon',
-            beta_start=0.0001,
-            beta_end=0.02,
-            clip_sample=False,
-        )
+        if args.scheduler == "ddpm":
+            self.noise_scheduler = DDPMScheduler(
+                num_train_timesteps=1000,
+                beta_schedule='linear',
+                prediction_type='epsilon',
+                beta_start=0.0001,
+                beta_end=0.02,
+                clip_sample=False,
+            )
+        elif args.scheduler == "fmed":
+            # from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
+            # self.noise_scheduler =
+            pass
+            raise NotImplementedError
+            # todo
 
-        # Initialize optimizer
+            # Initialize optimizer
         self.network_params = list(self.model.parameters())
         
         self.optimizer = torch.optim.AdamW(

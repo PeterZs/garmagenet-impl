@@ -36,11 +36,6 @@ def get_args_ldm():
                         help="Choose ldm type.")
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
 
-    """
-    fmed:   FlowMatchEulerDiscreteScheduler
-    """
-    parser.add_argument('--scheduler', type=str, default="ddpm",choices=["ddpm", "fmed"], help='ldm schedular type')
-
     # Training parameters
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')
@@ -71,6 +66,10 @@ def get_args_ldm():
     parser.add_argument('--sample_mode', type=str, default='sample', choices=['mode', 'sample'], help='Encoder mode of the vae model.')
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
     parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
+
+    # Schedular (DDPM、FlowMatchEulerDiscreteScheduler of hunyuan3d2.0)
+    parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM", "HY_FMED"], help="")
+    parser.add_argument("--scheduler_shift", type=int, default=3, help="")
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')

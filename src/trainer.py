@@ -128,6 +128,8 @@ class SurfVAETrainer():
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
+                torch.cuda.empty_cache()
+
             # logging
             if self.iters % 10 == 0:
                 _z = posterior.mode()
@@ -391,6 +393,8 @@ class SurfPosTrainer():
                 nn.utils.clip_grad_norm_(self.network_params, max_norm=50.0) # clip gradient
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
+
+                torch.cuda.empty_cache()
 
             # logging
             if self.iters % 10 == 0: wandb.log({"loss-noise": total_loss}, step=self.iters)
@@ -693,7 +697,8 @@ class SurfZTrainer():
         self.loss_fn = nn.MSELoss()
 
         # Initialize diffusion scheduler
-        if args.scheduler == "ddpm":
+        if args.scheduler == "DDPM":
+            self.scheduler_type = 'DDPM'
             self.noise_scheduler = DDPMScheduler(
                 num_train_timesteps=1000,
                 beta_schedule='linear',
@@ -702,14 +707,15 @@ class SurfZTrainer():
                 beta_end=0.02,
                 clip_sample=False,
             )
-        elif args.scheduler == "fmed":
-            # from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
-            # self.noise_scheduler =
-            pass
-            raise NotImplementedError
-            # todo
+        elif args.scheduler == "HY_FMED":
+            self.scheduler_type = 'HY_FMED'
+            from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
+            self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
+                num_train_timesteps = 1000,
+                shift=args.scheduler_shift,
+            )
 
-            # Initialize optimizer
+        # Initialize optimizer
         self.network_params = list(self.model.parameters())
         
         self.optimizer = torch.optim.AdamW(
@@ -782,15 +788,30 @@ class SurfZTrainer():
                 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
                 if torch.rand(1) > 0.3:
-                    aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
-                    aug_noise = torch.randn(surfPos.shape).to(self.device)
-                    surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+                    if self.scheduler_type == 'DDPM':
+                        aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                        aug_noise = torch.randn(surfPos.shape).to(self.device)
+                        surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+                    elif self.scheduler_type == "HY_FMED":
+                        aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                        aug_ts = self.noise_scheduler.timesteps.to(self.device)[aug_ts]
+                        aug_noise = torch.randn(surfPos.shape).to(self.device)
+                        surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+                    else:
+                        raise NotImplementedError
 
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 
                 # Add noise
-                timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
+                if self.scheduler_type == "DDPM":
+                    timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
+                elif self.scheduler_type == "HY_FMED":
+                    steps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
+                    timesteps =  self.noise_scheduler.timesteps.to(self.device)[steps]
+                else:
+                    raise NotImplementedError
+
                 surfZ_noise = torch.randn(surfZ.shape).to(self.device)  
                 surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
                 
@@ -806,6 +827,7 @@ class SurfZTrainer():
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
+                torch.cuda.empty_cache()
             # logging
             if self.iters % 10 == 0:
                 wandb.log({
@@ -871,8 +893,16 @@ class SurfZTrainer():
             total_count += len(surfPos)
             
             for idx, step in enumerate(val_timesteps):
-                # Evaluate at timestep 
-                timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
+                # Evaluate at timestep
+                # Add noise
+                if self.scheduler_type == "DDPM":
+                    timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
+                elif self.scheduler_type == "HY_FMED":
+                    steps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
+                    timesteps = self.noise_scheduler.timesteps.to(self.device)[steps]
+                else:
+                    raise NotImplementedError
+
                 noise = torch.randn(tokens.shape).to(self.device)  
                 diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
                 
@@ -1172,6 +1202,8 @@ class SurfInpaintingTrainer():
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 total_loss = total_loss/w_loss
+
+                torch.cuda.empty_cache()
             # logging
             if self.iters % 10 == 0:
                 surfZ_geo_mask = surfZ_gt[~surf_mask][...,266:]
@@ -1535,6 +1567,8 @@ class SurfInpaintingTrainer2():
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 total_loss = total_loss/w_loss
+
+                torch.cuda.empty_cache()
             # logging
             if self.iters % 10 == 0:
                 surfZ_geo_mask = surfZ_gt[~surf_mask][..., 6:]

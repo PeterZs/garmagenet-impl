@@ -89,7 +89,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         if not use_dynamic_shifting:
             # when use_dynamic_shifting is True, we apply the timestep shifting on the fly based on the image resolution
             sigmas = shift * sigmas / (1 + (shift - 1) * sigmas)
-
+        self.shift = shift
         self.timesteps = sigmas * num_train_timesteps
 
         self._step_index = None
@@ -124,11 +124,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         """
         self._begin_index = begin_index
 
-    def scale_noise(
+    def add_noise(
         self,
         sample: torch.FloatTensor,
+        noise: Optional[torch.FloatTensor],
         timestep: Union[float, torch.FloatTensor],
-        noise: Optional[torch.FloatTensor] = None,
     ) -> torch.FloatTensor:
         """
         Forward process in flow-matching

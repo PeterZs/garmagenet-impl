@@ -91,7 +91,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             sigmas = shift * sigmas / (1 + (shift - 1) * sigmas)
         self.shift = shift
         self.timesteps = sigmas * num_train_timesteps
-
+        self.num_train_timesteps = num_train_timesteps
         self._step_index = None
         self._begin_index = None
 
@@ -319,6 +319,10 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     def __len__(self):
         return self.config.num_train_timesteps
+
+    def cal_velocity(self, ):
+        # 计算
+        raise NotImplementedError
 
 
 @dataclass

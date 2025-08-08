@@ -718,7 +718,16 @@ class SurfZTrainer():
 
         self.loss_fn = nn.MSELoss()
 
-        # Initialize diffusion scheduler
+        # Initialize diffusion scheduler ===
+        # 仅用于对板片BBox进行加噪的scheduler
+        self.pos_noise_scheduler = DDPMScheduler(
+            num_train_timesteps=1000,
+            beta_schedule='linear',
+            prediction_type='epsilon',
+            beta_start=0.0001,
+            beta_end=0.02,
+            clip_sample=False,
+        )
         if args.scheduler == "DDPM":
             self.scheduler_type = 'DDPM'
             self.noise_scheduler = DDPMScheduler(
@@ -732,6 +741,15 @@ class SurfZTrainer():
         elif args.scheduler == "HY_FMED":
             self.scheduler_type = 'HY_FMED'
             from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
+            from src.models.denoisers.dit_hunyuan_2.transport import create_transport
+
+            # transport用于采样t、计算损失
+            self.transport = create_transport(
+                path_type='Linear',
+                prediction="velocity",
+                train_sample_type="uniform"
+            )
+
             self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
                 num_train_timesteps = 1000,
                 shift=args.scheduler_shift,
@@ -810,45 +828,48 @@ class SurfZTrainer():
 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
                 if torch.rand(1) > 0.3:
-                    if self.scheduler_type == 'DDPM':
-                        aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
-                        aug_noise = torch.randn(surfPos.shape).to(self.device)
-                        surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
-                    elif self.scheduler_type == "HY_FMED":
-                        aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
-                        aug_ts = self.noise_scheduler.timesteps.to(self.device)[aug_ts]
-                        aug_noise = torch.randn(surfPos.shape).to(self.device)
-                        surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
-                    else:
-                        raise NotImplementedError
+                    aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                    aug_noise = torch.randn(surfPos.shape).to(self.device)
+                    surfPos = self.pos_noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
 
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 
-                # Add noise
+                # forward ===
                 if self.scheduler_type == "DDPM":
                     timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
+
+                    surfZ_noise = torch.randn(surfZ.shape).to(self.device)
+                    surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
+
+                    # Predict noise
+                    surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
+
+                    # Loss
+                    total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])
                 elif self.scheduler_type == "HY_FMED":
-                    steps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
-                    timesteps =  self.noise_scheduler.timesteps.to(self.device)[steps]
+                    x1 = surfZ
+
+                    # 随机采样shape和GT-Latent一样的噪声，以及随机的t
+                    t, x0, x1 = self.transport.sample(x1)
+                    # 根据采样的噪声、t获得加噪后的Latent:xt，以及纯噪声到GT的向量ut（ut与t无关，等于x1-x0）
+                    t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
+
+                    # Predict veloity
+                    surfZ_pred = self.model(xt, t, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
+
+                    # Loss
+                    total_loss = self.transport.training_losses(surfZ_pred[~surf_mask], xt[~surf_mask], ut[~surf_mask])["loss"].mean()
                 else:
                     raise NotImplementedError
 
-                surfZ_noise = torch.randn(surfZ.shape).to(self.device)
-                surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
 
-                # Predict noise
-                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
-
-                # Loss
-                total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])
-
-                # Update model
+                # Update model ===
                 with torch.autograd.set_detect_anomaly(True):
                     self.scaler.scale(total_loss).backward()
                 # self.scaler.scale(total_loss).backward()
 
-                nn.utils.clip_grad_norm_(self.network_params, max_norm=50.0) # clip gradient
+                nn.utils.clip_grad_norm_(self.network_params, max_norm=50.0)  # clip gradient
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
@@ -913,28 +934,37 @@ class SurfZTrainer():
 
             bsz = len(surfPos)
 
-            tokens = surfZ = surfZ * self.z_scaled
+            surfZ = surfZ * self.z_scaled
 
             total_count += len(surfPos)
 
-            for idx, step in enumerate(val_timesteps):
-                # Evaluate at timestep
-                # Add noise
-                if self.scheduler_type == "DDPM":
-                    timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
-                elif self.scheduler_type == "HY_FMED":
-                    steps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
-                    timesteps = self.noise_scheduler.timesteps.to(self.device)[steps]
-                else:
-                    raise NotImplementedError
+            with torch.no_grad():
+                for idx, step in enumerate(val_timesteps):
+                    # Evaluate at timestep
+                    # Add noise
+                    if self.scheduler_type == "DDPM":
+                        timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
 
-                noise = torch.randn(tokens.shape).to(self.device)
-                diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
+                        surfZ_noise = torch.randn(surfZ.shape).to(self.device)
+                        surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
 
-                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb)
+                        with torch.no_grad():
+                            surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb)
 
-                loss = mse_loss(pred[~surf_mask], noise[~surf_mask]).mean(-1).sum().item()
-                total_loss[idx] += loss
+                        loss = mse_loss(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask]).mean(-1).sum().item()
+                    elif self.scheduler_type == "HY_FMED":
+                        timesteps = torch.randint(step - 1, step, (bsz,), device=surfPos.device).long()
+                        t = (self.noise_scheduler.timesteps.to(timesteps)/self.noise_scheduler.num_train_timesteps)[timesteps]
+
+                        x1 = surfZ
+                        _, x0, x1 = self.transport.sample(x1)
+                        t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
+                        surfZ_pred = self.model(xt, t, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
+                        loss = mse_loss(surfZ_pred[~surf_mask], ut[~surf_mask]).mean(-1).sum().item()
+                    else:
+                        raise NotImplementedError
+
+                    total_loss[idx] += loss
 
             progress_bar.update(1)
         progress_bar.close()
@@ -950,6 +980,8 @@ class SurfZTrainer():
             self.val_dataloader = torch.utils.data.DataLoader(
                 self.val_dataset, shuffle=False,
                 batch_size=self.batch_size, num_workers=16)
+
+        torch.cuda.empty_cache()
         return
 
     def save_model(self):
@@ -1075,7 +1107,16 @@ class SurfInpaintingTrainer():
 
         self.loss_fn = nn.MSELoss()
 
-        # Initialize diffusion scheduler
+        # Initialize diffusion scheduler ===
+        # 仅用于对板片BBox进行加噪的scheduler
+        self.pos_noise_scheduler = DDPMScheduler(
+            num_train_timesteps=1000,
+            beta_schedule='linear',
+            prediction_type='epsilon',
+            beta_start=0.0001,
+            beta_end=0.02,
+            clip_sample=False,
+        )
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=1000,
             beta_schedule='linear',
@@ -1186,7 +1227,7 @@ class SurfInpaintingTrainer():
                 if torch.rand(1) > 0.3:
                     aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
                     aug_noise = torch.randn(surf_uv_bbox.shape).to(self.device)
-                    surf_uv_bbox = self.noise_scheduler.add_noise(surf_uv_bbox, aug_noise, aug_ts)
+                    surf_uv_bbox = self.pos_noise_scheduler.add_noise(surf_uv_bbox, aug_noise, aug_ts)
 
 
                 latent_geo_mask = latent_geo_mask * self.z_scaled
@@ -1471,7 +1512,16 @@ class SurfInpaintingTrainer2():
 
         self.loss_fn = nn.MSELoss()
 
-        # Initialize diffusion scheduler
+        # Initialize diffusion scheduler ===
+        # 仅用于对板片BBox进行加噪的scheduler
+        self.pos_noise_scheduler = DDPMScheduler(
+            num_train_timesteps=1000,
+            beta_schedule='linear',
+            prediction_type='epsilon',
+            beta_start=0.0001,
+            beta_end=0.02,
+            clip_sample=False,
+        )
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=1000,
             beta_schedule='linear',
@@ -1579,7 +1629,7 @@ class SurfInpaintingTrainer2():
                 if torch.rand(1) > 0.3:
                     aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
                     aug_noise = torch.randn(surf_uv_bbox.shape).to(self.device)
-                    surf_uv_bbox = self.noise_scheduler.add_noise(surf_uv_bbox, aug_noise, aug_ts)
+                    surf_uv_bbox = self.pos_noise_scheduler.add_noise(surf_uv_bbox, aug_noise, aug_ts)
 
 
                 latent_geo_mask = latent_geo_mask * self.z_scaled

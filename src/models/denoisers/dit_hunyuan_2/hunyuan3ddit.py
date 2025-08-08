@@ -24,13 +24,13 @@ from einops import rearrange
 from torch import Tensor, nn
 
 scaled_dot_product_attention = nn.functional.scaled_dot_product_attention
-if os.environ.get('USE_SAGEATTN', '0') == '1':
-    try:
-        from sageattention import sageattn
-    except ImportError:
-        raise ImportError('Please install the package "sageattention" to use this USE_SAGEATTN.')
-    scaled_dot_product_attention = sageattn
 
+# if os.environ.get('USE_SAGEATTN', '0') == '1':
+#     try:
+#         from sageattention import sageattn
+#     except ImportError:
+#         raise ImportError('Please install the package "sageattention" to use this USE_SAGEATTN.')
+#     scaled_dot_product_attention = sageattn
 
 def attention(q: Tensor, k: Tensor, v: Tensor, attn_mask=None) -> Tensor:
     x = scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
@@ -180,7 +180,6 @@ class Modulation(nn.Module):
     def forward(self, vec: Tensor) -> Tuple[ModulationOut, Optional[ModulationOut]]:
         out = self.lin(nn.functional.silu(vec))[:, None, :]
         out = out.chunk(self.multiplier, dim=-1)
-
         return (
             ModulationOut(*out[:3]),
             ModulationOut(*out[3:]) if self.is_double else None,
@@ -226,13 +225,13 @@ class DoubleStreamBlock(nn.Module):
         Args:
             img:        LatentCode
             txt:        Condition
-            vec:        Time/Position Embedding
+            vec:        Time/Position Embedding (currently is time embedding)
             attn_mask:
         Returns:
         """
 
-        img_mod1, img_mod2 = self.img_mod(vec)
-        txt_mod1, txt_mod2 = self.txt_mod(vec)
+        img_mod1, img_mod2 = self.img_mod(vec)  # panels tokens
+        txt_mod1, txt_mod2 = self.txt_mod(vec)  # conditions
 
         img_modulated = self.img_norm1(img)
         img_modulated = (1 + img_mod1.scale) * img_modulated + img_mod1.shift
@@ -559,7 +558,7 @@ class HunyuanDiT(nn.Module):
             # MM-DIT 用的mask需要额外加一个False，对应条件的token
             assert attn_mask.shape[-1] == x.shape[1]
             attn_mask_MM = torch.concat([torch.zeros((attn_mask.shape[0], 1)).to(attn_mask), attn_mask], dim=-1)
-            attn_mask_float = (~attn_mask_MM).float()  # False -> 1.0, True -> 0.0
+            attn_mask_float = torch.zeros_like(attn_mask_MM, device=attn_mask.device, dtype=torch.float)
             attn_mask_float = attn_mask_float.masked_fill(attn_mask_MM, float('-inf'))  # True -> -inf
             attn_mask_float = attn_mask_float.masked_fill(~attn_mask_MM, 0.0)  # False -> 0.0
             # attn_mask_float 现在是：[[0.0, 0.0, -inf, -inf], [0.0, 0.0, 0.0, -inf]]

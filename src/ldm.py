@@ -72,6 +72,7 @@ def get_args_ldm():
     # Schedular (DDPM、FlowMatchEulerDiscreteScheduler of hunyuan3d2.0)
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM", "HY_FMED"], help="")
     parser.add_argument("--scheduler_shift", type=int, default=3, help="")
+    parser.add_argument("--time_sample", type=str, default="uniform", help="")  # [TODO]
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')

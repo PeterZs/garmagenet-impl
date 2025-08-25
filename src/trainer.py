@@ -249,16 +249,28 @@ class SurfPosTrainer():
         else:
             self.device_ids = None
 
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+
         self.bbox_scaled = args.bbox_scaled
 
         self.denoiser_type = args.denoiser_type
 
         # Initialize condition encoder
-        if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
-        if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
-        if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
+        if args.text_encoder is not None:
+            self.text_encoder = TextEncoder(args.text_encoder, self.device)
+            self.cond_encoder = self.text_encoder
+        if args.pointcloud_encoder is not None:
+            self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
+            self.cond_encoder = self.pointcloud_encoder
+        if args.sketch_encoder is not None:
+            self.sketch_encoder = args.sketch_encoder
+            self.cond_encoder = self.sketch_encoder
 
         condition_dim = get_condition_dim(args, self)
+
+        self.train_dataset.init_encoder(self.cond_encoder)
+        self.val_dataset.init_encoder(self.cond_encoder)
 
         # Initialize network
         self.pos_dim = train_dataset.pos_dim
@@ -333,9 +345,6 @@ class SurfPosTrainer():
         self.iters = run_step
 
         # Initialize dataloader
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
-
         self.train_dataloader = torch.utils.data.DataLoader(
             train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=16)
         self.val_dataloader = torch.utils.data.DataLoader(
@@ -351,6 +360,7 @@ class SurfPosTrainer():
             print("Resume epoch from args.weight.\n"
                   f"Current epoch is: {self.epoch}")
             print("This may cause error if batch size has changed.")
+
 
     def train_one_epoch(self):
         """
@@ -633,7 +643,6 @@ class SurfZTrainer():
         else:
             self.device_ids = None
 
-
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.batch_size = args.batch_size
@@ -644,10 +653,16 @@ class SurfZTrainer():
         self.latent_channels = args.latent_channels
         self.block_dims = args.block_dims
 
-        # Initialize text encoder
-        if args.text_encoder is not None: self.text_encoder = TextEncoder(args.text_encoder, self.device)
-        if args.pointcloud_encoder is not None: self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
-        if args.sketch_encoder is not None: self.sketch_encoder = args.sketch_encoder
+        # Initialize condition encoder
+        if args.text_encoder is not None:
+            self.text_encoder = TextEncoder(args.text_encoder, self.device)
+            self.cond_encoder = self.text_encoder
+        if args.pointcloud_encoder is not None:
+            self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, self.device)
+            self.cond_encoder = self.pointcloud_encoder
+        if args.sketch_encoder is not None:
+            self.sketch_encoder = args.sketch_encoder
+            self.cond_encoder = self.sketch_encoder
 
         condition_dim = get_condition_dim(args, self)
 
@@ -671,8 +686,8 @@ class SurfZTrainer():
 
         print('[DONE] Init parallel surface vae encoder.')
 
-        train_dataset.init_encoder(self.surf_vae_encoder, self.z_scaled)
-        val_dataset.init_encoder(self.surf_vae_encoder, train_dataset.z_scaled)
+        self.train_dataset.init_encoder(self.surf_vae_encoder, self.cond_encoder, self.z_scaled)
+        self.val_dataset.init_encoder(self.surf_vae_encoder, self.cond_encoder, train_dataset.z_scaled)
         if self.z_scaled is None: self.z_scaled = train_dataset.z_scaled
 
         # Initialize network
@@ -803,6 +818,18 @@ class SurfZTrainer():
         """
         Train the model for one epoch
         """
+
+        # [test]
+        print("=== DEBUG self.model ===")
+        print("type(self.model._modules):", type(self.model._modules))
+        print("self.model._modules:", self.model._modules)
+        print("self.model._modules.items:", self.model._modules.items)
+        if callable(self.model._modules.items):
+            print("call self.model._modules.items():", self.model._modules.items())
+        else:
+            print("self.model._modules.items is NOT callable!")
+        print("=== END DEBUG self.model ===")
+
         self.model.train()
 
         progress_bar = tqdm(total=len(self.train_dataloader))

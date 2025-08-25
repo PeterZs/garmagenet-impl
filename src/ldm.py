@@ -9,8 +9,8 @@ def get_args_ldm():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
                         help='Path to data folder')
-    # parser.add_argument('--use_data_root', action="store_true",
-    #                     help='If data list store absolute path, don`t use this flag.')
+    parser.add_argument('--use_data_root', action="store_true",
+                        help='If data list store absolute path, don`t use this flag.')
     parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
                         help='Path to data list')  
     parser.add_argument('--cache_dir', type=str, default=None, help='Path to cached data (with latents).')
@@ -64,6 +64,7 @@ def get_args_ldm():
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help="Text encoder when applying text as generation condition.")
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
     parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="")   # 提前采样好的点云，如果没有的话会从GT的Garmage中采样不均匀的点云
+    parser.add_argument("--pointcloud_feature_dir", type=str, default=None,  help="")
     parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G"], help="")
     parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="")   # 提前准备好的 sketch feature
 
@@ -97,7 +98,12 @@ def run(args):
         # faulthandler.enable()
         faulthandler.enable(all_threads=True)
 
-    # init condition encoder ===
+
+    # [test] ban wandb
+    if True:
+        import wandb;
+        wandb.finish();
+        wandb.init(mode="disabled")
 
 
 

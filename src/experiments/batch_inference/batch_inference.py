@@ -560,6 +560,9 @@ def run(args):
         if args.pointcloud_encoder is not None:
             pointcloud_features = data_cache["pointcloud_feature"][sample_data_idx]
             sampled_pc_cond = data_cache["sampled_pc_cond"][sample_data_idx]
+            if "pccond_item_idx" in data_cache:
+                "根据data_fp去找点云condition会更加合理，不使用cache中的"
+                raise NotImplementedError
         else:
             pointcloud_features = None
             sampled_pc_cond = None

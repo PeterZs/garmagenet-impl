@@ -2,6 +2,36 @@
 
 ### Train the Latent Diffusion Model ###
 
+
+# 多种采样方式的点云条件版本 ===
+# zero padding xyz uv mask Q1-4 pcCond_uniform_nonuniform_fps ===
+# POS Bsize 182:1230
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_multitype/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond_multitype --train_nepoch 200000 --test_nepoch 1000 --save_nepoch 1000 \
+    --batch_size 1640 --max_face 32 --bbox_scaled 1.0 \
+    --pointcloud_encoder POINT_E --pointcloud_feature_dir /data/AIGP/pc_cond_sample_multitype/ \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+
+# Z Bsize 188:1230
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+export CUDA_VISIBLE_DEVICES=1
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_multitype/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond_multitype --train_nepoch 200000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 1640 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --pointcloud_encoder POINT_E --pointcloud_feature_dir /data/AIGP/pc_cond_sample_multitype/\
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+
+
 # Revision需要点云拆板实验，因此需要重新训练一版 ===
 # zero padding xyz uv mask Q1-4 pcCond_uniform ===
 # POS Bsize 182:1230

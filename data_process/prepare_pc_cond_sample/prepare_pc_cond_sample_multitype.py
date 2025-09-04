@@ -12,18 +12,16 @@ python data_process/prepare_pc_cond_sample/prepare_pc_cond_sample_multitype.py \
 """
 
 import os
-import math
 import argparse
 import  pickle
 from glob import glob
 from tqdm import tqdm
 from pathlib import Path
 
-import torch
 import numpy as np
 import trimesh
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from src.pc_utils import farthest_point_sample
-# from src.vis import pointcloud_visualize
 
 
 def pharse_data_fp(data_fp):
@@ -37,24 +35,6 @@ def pharse_data_fp(data_fp):
         data_fp = data_fp.replace("_objs", "")
     return data_fp
 
-
-def ensure_directory(path):
-    """确保目录存在，如果不存在则创建"""
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-
-
-
-def styleXD_normalize(point):
-    global_scale = 2000.0
-    if point.shape[-1]==3:
-        global_offset = (0., 1000., 0.)
-    elif point.shape[-1]==2:
-        global_offset = (0., 1000.)
-
-    point_rtn = (point - global_offset) / (global_scale * 0.5)
-    return point_rtn
 
 def process_one_obj(obj_path, obj_dataset_folder, output_folder, sample_num):
     try:
@@ -75,7 +55,6 @@ def process_one_obj(obj_path, obj_dataset_folder, output_folder, sample_num):
                 )
                 np.save(pc_save_path, pc_sampled_surface_uniform)
             else:
-                # 如果 obj 是点云 Scene，直接采样顶点
                 vertices = np.array(garment_mesh.vertices)
                 if len(vertices) > sample_num:
                     idx = np.random.choice(len(vertices), sample_num, replace=False)
@@ -89,7 +68,7 @@ def process_one_obj(obj_path, obj_dataset_folder, output_folder, sample_num):
                 garment_mesh = trimesh.load_mesh(obj_path, process=False)
 
             vertices = np.array(garment_mesh.vertices)
-            pc_sampled_fps = farthest_point_sample(vertices, 2048, max_npoint=40000)
+            pc_sampled_fps = farthest_point_sample(vertices, 2048, max_npoint=40000)[0]
             np.save(pc_save_path_2, pc_sampled_fps)
 
         results["status"] = "ok"
@@ -99,9 +78,6 @@ def process_one_obj(obj_path, obj_dataset_folder, output_folder, sample_num):
     except Exception as e:
         return {"status": "error", "path": str(obj_path), "error": str(e)}
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
-from tqdm import tqdm
 
 def sample_pointclouds_uniform(obj_dataset_folder: str, output_folder: str, sample_num: int = 4096, num_workers=8):
     obj_with_stitch_folder = Path(obj_dataset_folder)
@@ -127,86 +103,6 @@ def sample_pointclouds_uniform(obj_dataset_folder: str, output_folder: str, samp
     print("✅ Done")
     return results
 
-    # for obj_path in tqdm(obj_paths, desc="non uniform"):
-        # try:
-        #     print(obj_path)
-        #     relative_path = os.path.relpath(os.path.dirname(obj_path), obj_dataset_folder)
-        #     sample_output_dir = os.path.join(output_folder, relative_path, "sampled_pc")
-        #     os.makedirs(sample_output_dir, exist_ok=True)
-        #
-        #     garment_mesh = None
-        #
-        #     # surface uniform sampling
-        #     pc_save_path = os.path.join(
-        #         sample_output_dir,
-        #         f"surface_uniform_{sample_num}.npy"
-        #     )
-        #     if not os.path.exists(pc_save_path):
-        #         garment_mesh = trimesh.load_mesh(obj_path, process=False)
-        #         pc_sampled_surface_uniform = np.array(trimesh.sample.sample_surface(garment_mesh, sample_num)[0])
-        #         np.save(pc_save_path, pc_sampled_surface_uniform)
-        #
-        #     # farest point sampling
-        #     # FPS 不进行多轮采样，
-        #     pc_save_path_2 = os.path.join(
-        #         sample_output_dir,
-        #         f"fps_{sample_num}.npy"
-        #     )
-        #     if not os.path.exists(pc_save_path_2):
-        #         if garment_mesh is None:
-        #             garment_mesh = trimesh.load_mesh(obj_path, process=False)
-        #         vertices = np.array(garment_mesh.vertices)
-        #         pc_sampled_fps = farthest_point_sample(np.array(vertices), 2048, max_npoint=40000)
-        #         np.save(pc_save_path_2, pc_sampled_fps)
-        #
-        # except Exception as e:
-        #     print(e)
-        #     continue
-
-
-# def sample_pointclouds_non_uniform(pkl_dataset_folders: str, output_folder: str, sample_num: int = 4096):
-#     """
-#     非均匀采样
-#     """
-#
-#     pkl_paths = []
-#     for pkl_dataset_folder in tqdm(pkl_dataset_folders):
-#         pkl_lsit = glob(os.path.join(pkl_dataset_folder, "*.pkl"))
-#         pkl_paths.extend(pkl_lsit)
-#         del pkl_lsit
-#
-#     print("Processing...")
-#     for pkl_path in tqdm(pkl_paths, desc="non uniform"):
-#         try:
-#             print(pkl_path)
-#             with open(pkl_path, "rb") as f:
-#                 data = pickle.load(f)
-#             data_fp = data["data_fp"]
-#
-#             relative_path = pharse_data_fp(data_fp)
-#             sample_output_dir = os.path.join(output_folder, relative_path, "sampled_pc")
-#             os.makedirs(sample_output_dir, exist_ok=True)
-#
-#             pc_save_path = os.path.join(
-#                 sample_output_dir,
-#                 f"surface_uniform_{sample_num}.npy"
-#             )
-#             if os.path.exists(pc_save_path):
-#                 continue
-#
-#             n_surfs = len(data['surf_bbox_wcs'])
-#             surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
-#             surf_mask = data["surf_mask"].reshape(n_surfs, -1)
-#             valid_pts = surf_wcs[surf_mask]
-#             pc_sampled = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
-#
-#             pc_save_path = os.path.join(
-#                 sample_output_dir,
-#                 f"non_uniform_{sample_num}.npy"
-#             )
-#             np.save(pc_save_path, pc_sampled)
-#         except Exception as e:
-#             print(e)
 
 def process_one_pkl(pkl_path, output_folder, sample_num):
     try:
@@ -214,7 +110,7 @@ def process_one_pkl(pkl_path, output_folder, sample_num):
             data = pickle.load(f)
         data_fp = data["data_fp"]
 
-        relative_path = pharse_data_fp(data_fp)  # 这里假设你已经实现了
+        relative_path = pharse_data_fp(data_fp)
         sample_output_dir = os.path.join(output_folder, relative_path, "sampled_pc")
         os.makedirs(sample_output_dir, exist_ok=True)
 
@@ -284,11 +180,12 @@ if __name__ == '__main__':
     obj_dataset_folder = args.obj_dataset_folder
     pkl_dataset_folders = args.pkl_dataset_folders
     pc_output_folder = args.pc_output_folder
-    ensure_directory(pc_output_folder)
+    os.makedirs(pc_output_folder, exist_ok=True)
+
     sample_num = args.sample_num
 
-    # # mesh表面均匀点云采样 + FPS点云采样
-    # sample_pointclouds_uniform(obj_dataset_folder, pc_output_folder, sample_num = sample_num)
+    # mesh surface uniform + FPS
+    sample_pointclouds_uniform(obj_dataset_folder, pc_output_folder, sample_num = sample_num)
 
-    # # 非均匀点云采样
+    # non uniform sampling
     sample_pointclouds_non_uniform(pkl_dataset_folders, pc_output_folder, sample_num = sample_num)

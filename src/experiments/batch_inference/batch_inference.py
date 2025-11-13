@@ -13,19 +13,19 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
 from src.network import AutoencoderKLFastDecode, TextEncoder, PointcloudEncoder, SketchEncoder
-from diffusers import DDPMScheduler  # , PNDMScheduler
-from src.utils import randn_tensor, data_fields_dict
+from diffusers import DDPMScheduler
+from src.utils import randn_tensor
+from src.constant import data_fields_dict
 from src.bbox_utils import bbox_deduplicate
 from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
 
 
-
-# 可视化作为 condition 的 PointCloud
+# Visualize pointcloud condition
 def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
-    assert vertices.ndim == 2 and vertices.shape[1] == 3, "vertices 应为 (N, 3) 的 numpy 数组"
+    assert vertices.ndim == 2 and vertices.shape[1] == 3, "vertices should be ndarray in (Nx3)"
 
     x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-    color = "#717388"  # 用 z 来着色
+    color = "#717388"
     xrange = x.max() - x.min()
     yrange = y.max() - y.min()
     zrange = z.max() - z.min()
@@ -38,13 +38,12 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
                 color=color,
                 colorscale='Viridis',
                 opacity=1,
-                showscale=False  # 不显示 colorbar
+                showscale=False
             ),
-            showlegend=False  # 不显示图例
+            showlegend=False
         )
     ])
 
-    # 隐藏坐标轴、网格、背景等
     axis_style = dict(
         showbackground=False,
         showgrid=False,
@@ -52,7 +51,7 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
         showline=False,
         ticks='',
         showticklabels=False,
-        visible=False  # 最直接隐藏整个轴
+        visible=False
     )
     camera = dict(
         up=dict(x=0, y=1, z=0),
@@ -222,17 +221,15 @@ def inference_one(
         data_id_trainval=None,
         save_denoising=False,
 ):
-    batch_size = 1
     max_surf = 32
     device = args.device
 
-    # 保存去噪过程，预处理
     if save_denoising:
         assert surf_pos_orig is None and dedup
         denoising_dict = {}
         vis_steps = get_visualization_steps()
         denoising_dict["denoising_data"] = {k:{} for k in vis_steps}
-        dedup_mask = np.zeros((max_surf), dtype=np.bool)  # 记录哪些BBox (为True的部分) 是被dedup掉的
+        dedup_mask = np.zeros((max_surf), dtype=np.bool)
     else:
         denoising_dict = None
 
@@ -258,10 +255,9 @@ def inference_one(
         condition_emb = condition_emb.to(device)
 
     # BBOX denoising ---------------------------------------------------------------
-    # 如果不使用原有的BBox ===
+    # Generate bbox
     if surf_pos_orig is None:
-        # SurfPos Denoising
-        surfPos = randn_tensor((batch_size, max_surf, 10)).to(device)
+        surfPos = randn_tensor((1, max_surf, 10)).to(device)
         ddpm_scheduler.set_timesteps(1000)
         with torch.no_grad():
             for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Pos Denoising"):
@@ -269,103 +265,26 @@ def inference_one(
                 pred = surfpos_model(surfPos, timesteps, condition=condition_emb)
                 surfPos = ddpm_scheduler.step(pred, t, surfPos).prev_sample
 
-                # 保存去噪过程中的一个阶段
+                # save the data of each steps during denoising
                 if save_denoising:
                     if t.item() in denoising_dict["denoising_data"].keys():
                         denoising_dict["denoising_data"][t.item()]["surf_pos"] = surfPos.squeeze(0).detach().cpu().numpy()
 
-        # # [test] vis BBox
-        # colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, max_surf)]
-        # _surf_pos_ = surfPos[:, :]
-        # _surf_uv_bbox_wcs_ = np.zeros((_surf_pos_.shape[-2], 6))
-        # _surf_uv_bbox_wcs_[:, [0, 1, 3, 4]] = _surf_pos_[0, :, 6:].detach().cpu().numpy()
-        # fig = draw_bbox_geometry_3D2D(
-        #     bboxes=[_surf_pos_[0, :, :6].detach().cpu().numpy(), _surf_uv_bbox_wcs_],
-        #     bbox_colors=colors,
-        #     title=f"{caption}",
-        #     # output_fp=output_fp.replace('.pkl', '_pointcloud.png'),
-        #     show_num=True,
-        #     fig_show="browser"
-        # )
-
-        if dedup:  # 去除重复的BBOX
-            # bboxes, dedup_mask = bbox_deduplicate(surfPos, padding=args.padding)
-            # surf_mask = torch.zeros((1, len(bboxes))) == 1
-            # _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - len(bboxes), 10)]).unsqueeze(0)
-            # _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - len(bboxes)) == 0], -1)
-            # n_surfs = torch.sum(~_surf_mask)
-
-            if args.padding == "repeat":
-                bbox_threshold = 0.08
-            elif args.padding == "zero":
-                bbox_threshold = 2e-4
-
-            _surf_pos = surfPos
-
-            bboxes = torch.concatenate(
-                    [_surf_pos[0][:, :6].unflatten(-1, torch.Size([2, 3])), _surf_pos[0][:, 6:].unflatten(-1, torch.Size([2, 2]))]
-                        , dim=-1).detach().cpu().numpy()
-
-            non_repeat = None
-            for bbox_idx, bbox in enumerate(bboxes):
-                if args.padding=="repeat":
-                    if non_repeat is None:
-                        non_repeat = bbox[np.newaxis, :, :]
-                    else:
-                        diff = np.max(np.max(np.abs(non_repeat - bbox)[..., -2:], -1), -1)  #
-                        same = diff < bbox_threshold
-                        bbox_rev = bbox[::-1]  # also test reverse bbox for matching
-                        diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., -2:], -1), -1)  # [...,-2:]
-                        same_rev = diff_rev < bbox_threshold
-                        if same.sum() >= 1 or same_rev.sum() >= 1:
-                            is_deduped = True # 当前BBox是否被去重了
-                        else:
-                            is_deduped = False
-                            non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
-
-                if args.padding=="zero":
-                    # （2D）判断BBox的大小是否非0
-                    is_deduped = False
-                    v = 1
-                    for h in (bbox[1] - bbox[0])[3:]:
-                        v *= h
-                    if v < bbox_threshold:
-                        is_deduped = True
-                    elif non_repeat is not None:  # 去重复的（zero padding 也有概率会产生重复）
-                        bbox_threshold_2 = 0.02
-                        diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :3], -1), -1)  #
-                        same = diff < bbox_threshold_2
-                        bbox_rev = bbox[::-1]  # also test reverse bbox for matching
-                        diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :3], -1), -1)  # [...,-2:]
-                        same_rev = diff_rev < bbox_threshold_2
-                        if same.sum() >= 1 or same_rev.sum() >= 1:
-                            is_deduped = True  # 当前BBox是否被去重了
-                    if is_deduped==False:
-                        if non_repeat is None:
-                            non_repeat = bbox[np.newaxis, :, :]
-                        else:
-                            non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
-
-                if save_denoising:
-                    dedup_mask = is_deduped
-
-            bboxes = np.concatenate([non_repeat[:, :, :3].reshape(len(non_repeat), -1), non_repeat[:, :, 3:].reshape(len(non_repeat), -1)], axis=-1)
+        if dedup:  # replace repeated bboxes
+            bboxes, dedup_mask = bbox_deduplicate(surfPos, padding=args.padding, dedup_repeat=True)
             surf_mask = torch.zeros((1, len(bboxes))) == 1
             _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - len(bboxes), 10)]).unsqueeze(0)
             _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - len(bboxes)) == 0], -1)
             n_surfs = torch.sum(~_surf_mask)
 
             if save_denoising:
-                """
-                将同样的去重应用到去噪过程中保存的每一步中
-                """
                 assert n_surfs == sum(~dedup_mask)
                 for step in denoising_dict["denoising_data"].keys():
                     denoising_dict["denoising_data"][step]["surf_pos"] = (
                         denoising_dict["denoising_data"][step]["surf_pos"][~dedup_mask])
                 # del denoising_dict['dedup_mask']
 
-    # 如果使用原有的BBox ===
+    # if using gt bbox ===
     else:
         n_surfs = torch.tensor(len(surf_pos_orig))
         surf_mask = torch.zeros((1, n_surfs)) == 1
@@ -373,7 +292,7 @@ def inference_one(
         _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - n_surfs) == 0], -1).to(device)
 
     # SurfZ Denoising ---------------------------------------------------------------
-    _surf_z = randn_tensor((1, 32, latent_channels * latent_size * latent_size), device=device)
+    _surf_z = randn_tensor((1, max_surf, latent_channels * latent_size * latent_size), device=device)
     ddpm_scheduler.set_timesteps(1000)
     with torch.no_grad():
         for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Z Denoising"):
@@ -383,7 +302,7 @@ def inference_one(
                 _surf_z, timesteps, _surf_pos.to(device), _surf_mask.to(device), class_label=None, condition=condition_emb, is_train=False)
             _surf_z = ddpm_scheduler.step(pred, t, _surf_z).prev_sample
 
-            # 保存去噪过程
+            # save the data of each steps during denoising
             if save_denoising:
                 if t.item() in denoising_dict["denoising_data"].keys():
                     denoising_dict["denoising_data"][t.item()]["surf_z_latent"] = _surf_z[0,:n_surfs].detach().cpu().numpy()
@@ -392,8 +311,6 @@ def inference_one(
 
     # VAE Decoding ------------------------------------------------------------------------
     with torch.no_grad(): decoded_surf_pos = surf_vae(_surf_z.view(-1, latent_channels, latent_size, latent_size))
-
-    # [todo] 如果有两个板片基本重合，则筛掉一个
 
     # save vis garmage channel-wise
     if vis:
@@ -422,23 +339,6 @@ def inference_one(
         else: plt.show()
         plt.close()
 
-        # # Original plot function
-        # fig, ax = plt.subplots(args.data_fields, 1, figsize=(40, 40))
-        # ax[0].imshow(pred_img[:3, ...].permute(1, 2, 0).detach().cpu().numpy())
-        # ax[1].imshow(pred_img[3:, ...].permute(1, 2, 0).detach().cpu().numpy())
-        # ax[2].imshow(pred_img[-1:, ...].permute(1, 2, 0).detach().cpu().numpy())
-        #
-        # ax[0].set_title('Geometry Images')
-        # ax[1].set_title('UV Images')
-        # ax[2].set_title('Mask Images')
-        #
-        # plt.tight_layout()
-        # plt.axis('off')
-        #
-        # if output_fp: plt.savefig(output_fp.replace('.pkl', '_geo_img.png'), transparent=True, dpi=72)
-        # else: plt.show()
-        # plt.close()
-
 
     # pharse Garmage by data_fields
     _surf_bbox = _surf_pos.squeeze(0)[~_surf_mask.squeeze(0), :].detach().cpu().numpy()
@@ -460,11 +360,6 @@ def inference_one(
         else:
             raise NotImplementedError
 
-    # _surf_ncs = _decoded_surf[..., :3].reshape(n_surfs, -1, 3)
-    # _surf_uv_ncs = _decoded_surf[..., 3:5].reshape(n_surfs, -1, 2)
-    # _surf_ncs_mask = _decoded_surf[..., -1:].reshape(n_surfs, -1) > 0.0
-
-    # [todo] 将以下部分也改成上面那种
     _surf_uv_bbox = _surf_bbox[..., 6:]
     _surf_bbox = _surf_bbox[..., :6]
 
@@ -473,7 +368,6 @@ def inference_one(
         colormap = plt.cm.coolwarm
         colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
         _surf_wcs = _denormalize_pts(_surf_ncs, _surf_bbox)
-        # _surf_uv_wcs = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox)
         draw_bbox_geometry(
             bboxes = _surf_bbox,
             bbox_colors = colors,
@@ -498,8 +392,7 @@ def inference_one(
         'denoising': denoising_dict,
         'args': vars(args)
     }
-
-    # 如果点云 condition，渲染个点云图
+    # Visualize pointcloud condition if generated with it.
     if args.pointcloud_encoder is not None:
         sampled_pts_normalized = normalize_pointcloud(sampled_pc_cond, 1)
         pointcloud_condition_visualize(sampled_pts_normalized, output_fp)
@@ -513,7 +406,7 @@ def inference_one(
 
 
 def run(args):
-    # 保证最多只有一种 condition embedding
+    # Ensure only 1 kind of condition embedding applied.
     not_none_count = sum(x is not None for x in [args.text_encoder, args.pointcloud_encoder, args.sketch_encoder])
     assert not_none_count in (0, 1)
 
@@ -523,31 +416,28 @@ def run(args):
 
     with open(args.cache, 'rb') as f: data_cache = pickle.load(f)
 
-    if args.num_samples == -1: sample_idxs = range(len(data_cache['item_idx']))
-    else: sample_idxs = random.sample(range(len(data_cache['item_idx'])), k=args.num_samples)
-
-    for sample_data_idx in tqdm(sample_idxs):
+    for sample_data_idx in tqdm(range(len(data_cache['item_idx']))):
         surf_pos_orig = None
         if args.use_original_pos:
             start_idx, end_idx = data_cache['item_idx'][sample_data_idx]
             surf_pos_orig = data_cache['surf_pos'][start_idx:end_idx]
             # surf_cls = data_cache['surf_cls'][start_idx:end_idx].to('cuda')
 
-        # data_cache 中通常有caption，可以存下来
         if "caption" in data_cache:
             caption = data_cache['caption'][sample_data_idx]
         else:
             print("No caption in cache.")
             caption = None
+
         if args.pointcloud_encoder is not None:
             if "pccond_item_idx" in data_cache:
-                choice = 0  # 0:surface_uniform, 1:fps, 2:non_uniformX
+                # 0:surface_uniform, 1:fps, 2:non_uniformX
+                choice = 0
                 pccond_idx = data_cache["pccond_item_idx"][sample_data_idx]
                 pointcloud_features = data_cache["pointcloud_feature"][pccond_idx[0]:pccond_idx[1]]
                 pointcloud_features = pointcloud_features[choice]
                 sampled_pc_cond = data_cache["sampled_pc_cond"][pccond_idx[0]:pccond_idx[1]]
                 sampled_pc_cond = sampled_pc_cond[choice]
-                # 根据data_fp去找点云condition会更加合理，不使用cache中的
             else:
                 pointcloud_features = data_cache["pointcloud_feature"][sample_data_idx]
                 sampled_pc_cond = data_cache["sampled_pc_cond"][sample_data_idx]
@@ -629,7 +519,6 @@ if __name__ == "__main__":
     parser.add_argument('--img_channels', type=int, default=6 , help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--reso', type=int, default=256, help='Sample size of the vae model.')
     parser.add_argument("--padding", type=str, default="repeat", choices=["repeat", "zero"], help='Padding type during surfPos training.')
-    parser.add_argument('--num_samples', type=int, default=-1, help='Number of samples to inference.')
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
     parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
     parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help='Text encoder type.')

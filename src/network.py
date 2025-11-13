@@ -255,9 +255,6 @@ class AutoencoderKLFastDecode(ModelMixin, ConfigMixin):
         return decoded    
 
 
-
-
-
 class TextEncoder:
     def __init__(self, encoder='CLIP', device='cuda'):
 
@@ -383,9 +380,6 @@ class PointcloudEncoder:
 
         if encoder == 'POINT_E':
             from src.models.pc_backbone.point_e.evals.feature_extractor import PointNetClassifier
-            """
-            cache_dir 是pretrain model的路径
-            """
             self.pointcloud_emb_dim = 512
             self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='/data/lsr/models/PFID_evaluator', device_batch_size=1)
             self.pointcloud_embedder_fn = self._get_pointe_pointcloud_embeds
@@ -416,16 +410,12 @@ class SketchEncoder:
 
             image_resolution = 224
             self.img_process = _transform(image_resolution)
-
             self.sketch_emb_dim = 1280
             VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
-            # 使用timm创建模型架构
             safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()
-            # 加载 safetensors 权重
             with safe_open(safetensors_path, framework="pt") as f:
-                # safetensors 返回一个字典，包含所有张量
                 state_dict = {key: f.get_tensor(key) for key in f.keys()}
                 vit_model.load_state_dict(state_dict)
             self.sketch_encoder = vit_model
@@ -435,6 +425,8 @@ class SketchEncoder:
             self.sketch_encoder = None
             self.sketch_embedder_fn = None
         elif encoder == 'RADIO_V2.5-H':
+            from src.utils import resize_image
+            self.resize_fn = resize_image
             radio_model = torch.hub.load(
                 'NVlabs/RADIO',
                 'radio_model',
@@ -459,10 +451,16 @@ class SketchEncoder:
         sketch_features = sketch_features[0].unsqueeze(0)
         return sketch_features
 
-    def _get_radiov2_5h_sketch_embeds(self, sketch_fp):
+    def _get_radiov2_5h_sketch_embeds(self, sketch_fp, resize=True):
         with torch.no_grad():
             # load image
-            image = Image.open(sketch_fp).convert('RGB')
+            image = Image.open(sketch_fp)
+
+            if resize:
+                image = self.resize_fn(image, new_size=518)
+
+            image = image.convert('RGB')
+
             x = pil_to_tensor(image).to(dtype=torch.float32, device='cuda')
             x.div_(255.0)
             x = x.unsqueeze(0)
@@ -496,7 +494,7 @@ class SurfPosNet(nn.Module):
 
     def __init__(self, p_dim=6, embed_dim=768, condition_dim=-1, num_cf=-1):
         super(SurfPosNet, self).__init__()
-        
+
         self.p_dim = p_dim
         self.embed_dim = embed_dim
         self.condition_dim = condition_dim
@@ -526,8 +524,11 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
         
-        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-        if self.condition_dim > 0: self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
+        if self.use_cf:
+            self.class_embed = Embedder(num_cf, self.embed_dim)
+
+        if self.condition_dim > 0:
+            self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
         
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
@@ -536,7 +537,7 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.p_dim),
         )
 
-    def forward(self, surfPos, timesteps, class_label=None, condition=None, is_train=False):
+    def forward(self, surfPos, timesteps, class_label:torch.tensor=None, condition=None, is_train=False):
         """ forward pass """
         bsz, seq_len, _ = surfPos.shape
         bsz = timesteps.size(0)
@@ -546,10 +547,10 @@ class SurfPosNet(nn.Module):
         tokens = p_embeds + time_embeds
                     
         if self.use_cf and class_label is not None:  # classifier-free
-            if is_train:
-                uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1  
-                class_label[uncond_mask] = 0
-            c_embeds = self.class_embed(class_label.squeeze(-1))
+            # if is_train:
+            #     uncond_mask = torch.rand(bsz) <= 0.1
+            #     class_label[uncond_mask] = 0
+            c_embeds = self.class_embed(class_label)
             c_embeds = c_embeds.unsqueeze(1)
             c_embeds = c_embeds.repeat((1, seq_len, 1))
             tokens += c_embeds
@@ -557,7 +558,7 @@ class SurfPosNet(nn.Module):
         if self.condition_dim > 0 and condition is not None:
             cond_token = self.cond_embed(condition)
             if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
-            else: tokens = torch.cat([tokens, cond_embeds], dim=1)
+            else: tokens = torch.cat([tokens, cond_token], dim=1)
 
         output = self.net(src=tokens.permute(1,0,2))  # 输入输出都是：(seq_len, batch_size, d_model)
         output = output[:seq_len].transpose(0,1)
@@ -811,148 +812,3 @@ class SurfZNet_hunyuandit(nn.Module):
         # pred = self.fc_out(output)
         return output
 
-
-
-# class SurfImpaintingNet(nn.Module):
-#     """
-#     Transformer-based latent diffusion model for surface position
-#     """
-#
-#     def __init__(self,
-#             p_dim=6,
-#             z_dim=256,
-#             embed_dim=768,
-#             num_heads=12,
-#             condition_dim=-1,
-#             num_cf=-1
-#         ):
-#         super(SurfImpaintingNet, self).__init__()
-#         self.p_dim = p_dim
-#         self.z_dim = z_dim
-#         self.embed_dim = embed_dim
-#         self.condition_dim = condition_dim
-#
-#         self.use_cf = num_cf > 0
-#         self.n_heads = num_heads
-#
-#         layer = nn.TransformerEncoderLayer(
-#             d_model=self.embed_dim,
-#             nhead=self.n_heads,
-#             norm_first=True,
-#             dim_feedforward=1024,
-#             dropout=0.1
-#         )
-#
-#         self.net = nn.TransformerEncoder(
-#             layer, 12, nn.LayerNorm(self.embed_dim))
-#
-#         self.z_embed = nn.Sequential(
-#             nn.Linear(self.z_dim, self.embed_dim),
-#             nn.LayerNorm(self.embed_dim),
-#             nn.SiLU(),
-#             nn.Linear(self.embed_dim, self.embed_dim),
-#         )
-#
-#         self.p_embed = nn.Sequential(
-#             nn.Linear(self.p_dim, self.embed_dim),
-#             nn.LayerNorm(self.embed_dim),
-#             nn.SiLU(),
-#             nn.Linear(self.embed_dim, self.embed_dim),
-#         )
-#
-#         self.time_embed = nn.Sequential(
-#             nn.Linear(self.embed_dim, self.embed_dim),
-#             nn.LayerNorm(self.embed_dim),
-#             nn.SiLU(),
-#             nn.Linear(self.embed_dim, self.embed_dim),
-#         )
-#
-#         if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-#         if self.condition_dim > 0:
-#             self.cond_embed = nn.Sequential(
-#                 nn.Linear(self.condition_dim, self.embed_dim),
-#                 nn.LayerNorm(self.embed_dim),
-#                 nn.SiLU(),
-#                 nn.Linear(self.embed_dim, self.embed_dim),
-#             )
-#
-#         self.fc_out = nn.Sequential(
-#             nn.Linear(self.embed_dim, self.embed_dim),
-#             nn.LayerNorm(self.embed_dim),
-#             nn.SiLU(),
-#             nn.Linear(self.embed_dim, self.z_dim),
-#         )
-#
-#         return
-#
-#     def forward(self, surfZ, surfPos, timesteps, surf_mask, class_label=None, condition=None, is_train=False):
-#         """ forward pass """
-#         bsz = timesteps.size(0)
-#
-#         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
-#         z_embeds = self.z_embed(surfZ)
-#         p_embeds = self.p_embed(surfPos)
-#
-#         tokens = z_embeds + p_embeds + time_embeds
-#
-#         if self.use_cf and class_label is not None:  # classifier-free
-#             if is_train:
-#                 uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1
-#                 class_label[uncond_mask] = 0
-#             c_embeds = self.class_embed(class_label.squeeze(-1))
-#             tokens += c_embeds
-#
-#         if self.condition_dim > 0 and condition is not None:
-#             cond_token = self.cond_embed(condition)
-#             if len(cond_token.shape) == 2:
-#                 tokens = tokens + cond_token[:, None]
-#             else:
-#                 tokens = torch.cat([cond_embeds, tokens], dim=1)
-#
-#         output = self.net(
-#             src=tokens.permute(1, 0, 2),
-#             src_key_padding_mask=surf_mask,
-#         ).transpose(0, 1)
-#
-#         # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
-#         # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-#         # print('[SurfZNet] output', output.size(), output.min(), output.max())
-#
-#         pred = self.fc_out(output)
-#         return pred
-#
-#     # def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
-#     #     """ forward pass """
-#     #     bsz = timesteps.size(0)
-#     #
-#     #     time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
-#     #     z_embeds = self.z_embed(surfZ)
-#     #     p_embeds = self.p_embed(surfPos)
-#     #
-#     #     tokens = z_embeds + p_embeds + time_embeds
-#     #
-#     #     if self.use_cf and class_label is not None:  # classifier-free
-#     #         if is_train:
-#     #             uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1
-#     #             class_label[uncond_mask] = 0
-#     #         c_embeds = self.class_embed(class_label.squeeze(-1))
-#     #         tokens += c_embeds
-#     #
-#     #     if self.condition_dim > 0 and condition is not None:
-#     #         cond_token = self.cond_embed(condition)
-#     #         if len(cond_token.shape) == 2:
-#     #             tokens = tokens + cond_token[:, None]
-#     #         else:
-#     #             tokens = torch.cat([cond_embeds, tokens], dim=1)
-#     #
-#     #     output = self.net(
-#     #         src=tokens.permute(1, 0, 2),
-#     #         src_key_padding_mask=surf_mask,
-#     #     ).transpose(0, 1)
-#     #
-#     #     # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
-#     #     # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-#     #     # print('[SurfZNet] output', output.size(), output.min(), output.max())
-#     #
-#     #     pred = self.fc_out(output)
-#     #     return pred

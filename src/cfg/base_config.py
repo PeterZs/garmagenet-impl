@@ -52,5 +52,4 @@ def get_VAE_cfg(cfg_fp=None):
 
 if __name__ == "__main__":
     vae_cfg = get_VAE_cfg()
-    vae_cfg.merge_from_file("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/src/cfg/config/models/vae/VAE_256_C1_L8x8x1.yaml")
-    a=1
+    vae_cfg.merge_from_file("cfg/config/models/vae/VAE_256_C1_L8x8x1.yaml")

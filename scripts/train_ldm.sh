@@ -1,6 +1,21 @@
 ### Train the Latent Diffusion Model ###
 
 
+# Radio-v2.5-h HYdit DP0.1 DDPM===
+# POS 190:1230
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_radio_v2.5-h_Q124/encoder_mode \
+    --padding zero \
+    --denoiser_type hunyuan_dit --scheduler DDPM --lr 5e-4 \
+    --embed_dim 768 --num_layer 7 13 --pos_dim -1 --dropout 0.1 \
+    --expr stylexdQ1Q2Q4_surfpos_HYdit_L7+13_dropout0.1_DDPM_xyzuv_pad_zero_sketchCond_radio_v2.5-h --train_nepoch 600000 --test_nepoch 1000 --save_nepoch 5000 \
+    --batch_size 1230 --max_face 32 --bbox_scaled 1.0 \
+    --sketch_encoder RADIO_V2.5-H --sketch_feature_dir /data/AIGP/feature_radio_v2.5-h \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature --gpu 0
+
 
 # Radio-v2.5-h 测试泛化性能否提升 ===
 # Z 190:2460 182:1230

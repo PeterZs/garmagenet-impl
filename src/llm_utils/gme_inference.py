@@ -56,7 +56,7 @@ class GmeQwen2VL:
         **kwargs
     ) -> torch.Tensor:
         if inputs_embeds is None:
-            inputs_embeds = self.base.model.embed_tokens(input_ids)
+            inputs_embeds = self.base.len_predictor.embed_tokens(input_ids)
             if pixel_values is not None:
                 pixel_values = pixel_values.type(self.base.visual.get_dtype())
                 image_embeds = self.base.visual(pixel_values, grid_thw=image_grid_thw).to(inputs_embeds.device)
@@ -70,7 +70,7 @@ class GmeQwen2VL:
             if attention_mask is not None:
                 attention_mask = attention_mask.to(inputs_embeds.device)
 
-        outputs = self.base.model(
+        outputs = self.base.len_predictor(
             input_ids=None,
             position_ids=position_ids,
             attention_mask=attention_mask,

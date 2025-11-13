@@ -2,7 +2,7 @@ import os
 import argparse
 
 from trainer import SurfVAETrainer
-from datasets.sxd import SurfData
+from datasets.sxd import VaeData
 
 
 def get_args_vae():
@@ -53,10 +53,10 @@ def run(args):
     print('Args:', args)
     
     # Initialize dataset loader and trainer
-    train_dataset = SurfData(
+    train_dataset = VaeData(
         args.data, args.list, data_fields=args.data_fields, 
         validate=False, aug=args.data_aug, chunksize=args.chunksize, args=args)
-    val_dataset = SurfData(
+    val_dataset = VaeData(
         args.data, args.list, data_fields=args.data_fields, 
         validate=True, aug=False, chunksize=args.chunksize, args=args)
     vae = SurfVAETrainer(args, train_dataset, val_dataset)
@@ -82,11 +82,8 @@ def run(args):
 if __name__ == "__main__":
     
     args = get_args_vae()
-    
-    # Set PyTorch to use only the specified GPU
-    # os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
-    
-    # Make project directory if not exist
+
+
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
     

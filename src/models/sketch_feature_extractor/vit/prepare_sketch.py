@@ -18,6 +18,7 @@ from PIL import Image
 from safetensors import safe_open
 from torch.utils.data import DataLoader
 
+from src.utils import ensure_directory
 from utils.sketch_utils import _transform
 
 
@@ -39,12 +40,6 @@ class FeatureExtractorDataset(torch.utils.data.Dataset):
         image_path = self.image_paths[index]
         image = Image.open(image_path).convert('RGB')
         return self.preprocess(image), str(image_path)
-
-
-def ensure_directory(path):
-    """确保目录存在，如果不存在则创建"""
-    if not os.path.exists(path):
-        os.makedirs(path)
 
 
 def extract_features(dataset_folder: str, feature_output_folder: str, safetensors_path: str, image_resolution: int = 224):

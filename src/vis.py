@@ -1,6 +1,3 @@
-"""
-一个比较原始但是能跑通的版本，用于批量生成数据
-"""
 
 import os
 
@@ -9,33 +6,6 @@ from PIL import Image
 from matplotlib.colors import to_rgb
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
-
-_CMAP = {
-    "帽": {"alias": "帽", "color": "#F7815D"},
-    "领": {"alias": "领", "color": "#F9D26D"},
-    "肩": {"alias": "肩", "color": "#F23434"},
-    "袖片": {"alias": "袖片", "color": "#C4DBBE"},
-    "袖口": {"alias": "袖口", "color": "#F0EDA8"},
-    "衣身前中": {"alias": "衣身前中", "color": "#8CA740"},
-    "衣身后中": {"alias": "衣身后中", "color": "#4087A7"},
-    "衣身侧": {"alias": "衣身侧", "color": "#DF7D7E"},
-    "底摆": {"alias": "底摆", "color": "#DACBBD"},
-    "腰头": {"alias": "腰头", "color": "#DABDD1"},
-    "裙前中": {"alias": "裙前中", "color": "#46B974"},
-    "裙后中": {"alias": "裙后中", "color": "#6B68F5"},
-    "裙侧": {"alias": "裙侧", "color": "#D37F50"},
-
-    "橡筋": {"alias": "橡筋", "color": "#696969"},
-    "木耳边": {"alias": "木耳边", "color": "#A8D4D2"},
-    "袖笼拼条": {"alias": "袖笼拼条", "color": "#696969"},
-    "荷叶边": {"alias": "荷叶边", "color": "#A8D4D2"},
-    "绑带": {"alias": "绑带", "color": "#696969"}
-}
-
-_PANEL_CLS = [
-    '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头', '裙前中', '裙后中', '裙侧', '橡筋', '木耳边', '袖笼拼条', '荷叶边', '绑带']
-
 
 def _pad_arr(arr, pad_size=10, pad_value=0):
     return np.pad(
@@ -157,8 +127,6 @@ def draw_bbox_geometry(
     fig_show=None
 ):
     annotations = []
-
-
     fig = go.Figure()
     for idx in range(len(bboxes)):
         # visuzlize point clouds if given
@@ -256,11 +224,6 @@ def draw_bbox_geometry(
     if output_fp is not None and fig_show is not None:
         fig.show(fig_show)
 
-def draw_geometry(surf_pos, surf_ncs):
-    pass
-
-
-
 
 def draw_bbox_geometry_3D2D(
     bboxes,
@@ -303,7 +266,7 @@ def draw_bbox_geometry_3D2D(
         fig_show="browser"
         )
     """
-    # 创建两个子图，两个都是3D视图
+    # create 2 subplots
     fig = make_subplots(
         rows=1, cols=2,
         specs=[[{'type': 'scene'}, {'type': 'scene'}]],
@@ -315,7 +278,7 @@ def draw_bbox_geometry_3D2D(
     traces1 = []
     annotations1 = []
     for idx in range(len(bboxes[0])):
-        # 可视化点云
+        # pointcloud visualize
         if points and points[0] is not None:
             cur_points, cur_points_mask = points[0][idx].reshape(-1, 3), point_masks[idx].reshape(-1)
             cur_points = cur_points[cur_points_mask, :]
@@ -333,7 +296,7 @@ def draw_bbox_geometry_3D2D(
             )
             traces1.append(trace)
 
-        # 添加包围盒线条和表面
+        # add bbox lines and surfaces
         min_point, max_point = bboxes[0][idx, :3], bboxes[0][idx, 3:]
         bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
         bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
@@ -354,7 +317,7 @@ def draw_bbox_geometry_3D2D(
                 opacity=1
             ))
 
-    # 把所有 traces 添加到两个 scene
+
     for trace in traces1:
         fig.add_trace(trace, row=1, col=1)
         # fig.add_trace(trace, row=1, col=2)
@@ -363,7 +326,7 @@ def draw_bbox_geometry_3D2D(
     traces2 = []
     annotations2 = []
     for idx in range(len(bboxes[1])):
-        # 可视化点云
+        # pointcloud visualize
         if points is not None and points[1] is not None:
             cur_points, cur_points_mask = points[1][idx].reshape(-1, 3), point_masks[idx].reshape(-1)
             cur_points = cur_points[cur_points_mask, :]
@@ -381,7 +344,7 @@ def draw_bbox_geometry_3D2D(
             )
             traces2.append(trace)
 
-        # 添加包围盒线条和表面
+        # add bbox lines and surfaces
         min_point, max_point = bboxes[1][idx, :3], bboxes[1][idx, 3:]
         bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
         bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
@@ -402,13 +365,12 @@ def draw_bbox_geometry_3D2D(
                 opacity=1
             ))
 
-    # 把所有 traces 添加到两个 scene
+
     for trace in traces2:
         # fig.add_trace(trace, row=1, col=1)
         fig.add_trace(trace, row=1, col=2)
 
 
-    # 相机设置
     camera = dict(
         up=dict(x=0, y=1, z=0),
         center=dict(x=0, y=0, z=0),
@@ -459,7 +421,6 @@ def draw_bbox_geometry_3D2D(
 
 
 def pointcloud_visualize(vertices:np.array):
-    # 场景
     fig = go.Figure()
 
     all_coords = np.concatenate(vertices, axis=0)
@@ -467,7 +428,7 @@ def pointcloud_visualize(vertices:np.array):
     min_val = np.min(all_coords)
     max_val = np.max(all_coords)
 
-    # x, y, z坐标
+
     x = vertices[:, 0]
     y = vertices[:, 1]
     z = vertices[:, 2]
@@ -497,19 +458,19 @@ def pointcloud_visualize(vertices:np.array):
                 title='Z Axis',
                 range=[min_val, max_val]
             ),
-            aspectmode='cube'  # 确保各个轴的比例相同
+            aspectmode='cube'
         ),
     )
 
     fig.show("browser")
 
 
-# 可视化作为 condition 的 PointCloud
+# Visualize pointcloud condition
 def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
-    assert vertices.ndim == 2 and vertices.shape[1] == 3, "vertices 应为 (N, 3) 的 numpy 数组"
+    assert vertices.ndim == 2 and vertices.shape[1] == 3, "vertices should be ndarray in (Nx3)"
 
     x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-    color = "#717388"  # 用 z 来着色
+    color = "#717388"
     xrange = x.max() - x.min()
     yrange = y.max() - y.min()
     zrange = z.max() - z.min()
@@ -522,13 +483,12 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
                 color=color,
                 colorscale='Viridis',
                 opacity=1,
-                showscale=False  # 不显示 colorbar
+                showscale=False
             ),
-            showlegend=False  # 不显示图例
+            showlegend=False
         )
     ])
 
-    # 隐藏坐标轴、网格、背景等
     axis_style = dict(
         showbackground=False,
         showgrid=False,
@@ -536,7 +496,7 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
         showline=False,
         ticks='',
         showticklabels=False,
-        visible=False  # 最直接隐藏整个轴
+        visible=False
     )
     camera = dict(
         up=dict(x=0, y=1, z=0),

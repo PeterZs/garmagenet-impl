@@ -3,8 +3,14 @@ import json
 from glob import glob
 from typing import List, Optional, Tuple, Union
 
+from PIL import Image
 import torch
 import numpy as np
+
+
+def ensure_directory(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 def randn_tensor(
     shape: Union[Tuple, List],
@@ -76,27 +82,19 @@ def _denormalize_pts(pts, bbox):
     bbox_offset = (bbox_max + bbox_min) / 2.0
     return pts * bbox_scale + bbox_offset
 
+def resize_image(image: Image.Image, new_size) -> Image.Image:
+    # image = Image.open(file_path)
+    width, height = image.size
+    scale = min(new_size / width, new_size / height)
+    new_width = int(width * scale)
+    new_height = int(height * scale)
 
-
-data_fields_dict = {
-    "surf_ncs": {
-        "title": "Geometry Images",
-        "len": 3,
-    },
-    "surf_wcs": {
-        "title": "Geometry_Wcs Images",
-        "len": 3,
-    },
-    "surf_uv_ncs": {
-        "title": "UV Images",
-        "len": 2,
-    },
-    "surf_normals": {
-        "title": "Normals Images",
-        "len": 3,
-    },
-    "surf_mask": {
-        "title": "Mask Images",
-        "len": 1,
-    }
-}
+    if new_width == new_size and new_height == new_size:
+        return image
+    else:
+        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        bg_color = image.getpixel((0, 0))
+        background = Image.new('RGB', (new_size, new_size), bg_color)
+        offset = ((new_size - new_width) // 2, (new_size - new_height) // 2)
+        background.paste(resized_image, offset)
+        return background

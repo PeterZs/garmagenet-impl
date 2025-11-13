@@ -16,8 +16,6 @@ from plyfile import PlyData
 import multiprocessing
 from chamferdist import ChamferDistance
 
-N_POINTS = 2000
-
 
 def _denormalize_pts(pts, bbox):
     pos_dim =  pts.shape[-1]
@@ -26,6 +24,7 @@ def _denormalize_pts(pts, bbox):
     bbox_scale = np.max(bbox_max - bbox_min, axis=-1, keepdims=True) * 0.5
     bbox_offset = (bbox_max + bbox_min) / 2.0
     return pts * bbox_scale + bbox_offset
+
 
 def find_files(folder, extension):
     return sorted([Path(os.path.join(folder, f)) for f in os.listdir(folder) if f.endswith(extension)])
@@ -222,67 +221,6 @@ def _jsdiv(P, Q):
 
     return 0.5 * (_kldiv(P_, M) + _kldiv(Q_, M))
 
-
-# def downsample_pc(points, n):
-#     sample_idx = random.sample(list(range(points.shape[0])), n)
-#     return points[sample_idx]
-#
-#
-# def normalize_pc(points):
-#     # normalize
-#     mean = np.mean(points, axis=0)
-#     points = (points - mean)
-#     # fit to unit cube
-#     scale = np.max(np.abs(points))
-#     points = points / scale
-#     return points
-#
-#
-# def collect_pc(cad_folder):
-#     pc_path = find_files(os.path.join(cad_folder, 'pcd'), 'final_pcd.ply')
-#     if len(pc_path) == 0:
-#         return []
-#     pc_path = pc_path[-1] # final pcd
-#     pc = read_ply(pc_path)
-#     if pc.shape[0] > N_POINTS:
-#         pc = downsample_pc(pc, N_POINTS)
-#     pc = normalize_pc(pc)
-#     return pc
-
-# def collect_pc2(cad_folder):
-#     pc = read_ply(cad_folder)
-#     if pc.shape[0] > N_POINTS:
-#         pc = downsample_pc(pc, N_POINTS)
-#     pc = normalize_pc(pc)
-#     return pc
-#
-# theta_x = np.radians(90)  # Rotation angle around X-axis
-# theta_y = np.radians(90)  # Rotation angle around Y-axis
-# theta_z = np.radians(180)  # Rotation angle around Z-axis
-#
-# # Create individual rotation matrices
-# Rx = np.array([[1, 0, 0],
-#                [0, np.cos(theta_x), -np.sin(theta_x)],
-#                [0, np.sin(theta_x), np.cos(theta_x)]])
-#
-# Ry = np.array([[np.cos(theta_y), 0, np.sin(theta_y)],
-#                [0, 1, 0],
-#                [-np.sin(theta_y), 0, np.cos(theta_y)]])
-#
-# Rz = np.array([[np.cos(theta_z), -np.sin(theta_z), 0],
-#                [np.sin(theta_z), np.cos(theta_z), 0],
-#                [0, 0, 1]])
-#
-# rotation_matrix = np.dot(np.dot(Rz, Ry), Rx)
-#
-# def collect_pc3(cad_folder):
-#     pc = read_ply(cad_folder)
-#     if pc.shape[0] > N_POINTS:
-#         pc = downsample_pc(pc, N_POINTS)
-#     pc = normalize_pc(pc)
-#     rotated_point_cloud = np.dot(pc, rotation_matrix.T).astype(np.float32)  # Transpose the rotation matrix to apply it correctly
-#     return rotated_point_cloud
-
 def load_data_with_prefix(root_folder, prefix):
     data_files = sorted(glob(os.path.join(root_folder,f"*.{prefix}")))
     return data_files
@@ -292,9 +230,10 @@ def random_split_integer(N, M, seed=None):
     q, r = divmod(N, M)
     result = [q + 1] * r + [q] * (M - r)
     if seed is not None:
-        random.seed(seed)  # 可选，设定随机种子保证可复现
+        random.seed(seed)
     random.shuffle(result)
     return result
+
 
 def load_garment_pc(shape_path, sample_num=2000):
     with open(shape_path, 'rb') as f:
@@ -325,73 +264,6 @@ def load_garment_pc(shape_path, sample_num=2000):
     return pc
 
 
-# def main():
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--fake", type=str)
-#     parser.add_argument("--real", type=str)
-#     parser.add_argument("--n_test", type=int, default=1000)
-#     parser.add_argument("--multi", type=int, default=3)
-#     parser.add_argument("--times", type=int, default=10)
-#     parser.add_argument("--batch_size", type=int, default=64)
-#     args = parser.parse_args()
-#
-#     print("n_test: {}, multiplier: {}, repeat times: {}".format(args.n_test, args.multi, args.times))
-#
-#     args.output = args.fake + '_results.txt'
-#
-#     # Load reference pcd
-#     num_cpus = multiprocessing.cpu_count()
-#     ref_pcs = []
-#     shape_paths = load_data_with_prefix(args.real, '.ply')
-#     load_iter = multiprocessing.Pool(num_cpus).imap(collect_pc2, shape_paths)
-#     for pc in tqdm(load_iter, total=len(shape_paths)):
-#         if len(pc) > 0:
-#             ref_pcs.append(pc)
-#     ref_pcs = np.stack(ref_pcs, axis=0)
-#     print("real point clouds: {}".format(ref_pcs.shape))
-#
-#
-#     # Load fake pcd
-#     sample_pcs = []
-#     shape_paths = load_data_with_prefix(args.fake, '.ply')
-#     load_iter = multiprocessing.Pool(num_cpus).imap(collect_pc2, shape_paths)
-#     for pc in tqdm(load_iter, total=len(shape_paths)):
-#         if len(pc) > 0:
-#             sample_pcs.append(pc)
-#     sample_pcs = np.stack(sample_pcs, axis=0)
-#
-#     print("fake point clouds: {}".format(sample_pcs.shape))
-#
-#     # Testing
-#     fp = open(args.output, "w")
-#     result_list = []
-#     for i in range(args.times):
-#         print("iteration {}...".format(i))
-#         select_idx = random.sample(list(range(len(sample_pcs))), int(args.multi * args.n_test))
-#         rand_sample_pcs = sample_pcs[select_idx]
-#
-#         select_idx = random.sample(list(range(len(ref_pcs))), args.n_test)
-#         rand_ref_pcs = ref_pcs[select_idx]
-#
-#         jsd = jsd_between_point_cloud_sets(rand_sample_pcs, rand_ref_pcs, in_unit_sphere=False)
-#         with torch.no_grad():
-#             rand_sample_pcs = torch.tensor(rand_sample_pcs).cuda()
-#             rand_ref_pcs = torch.tensor(rand_ref_pcs).cuda()
-#             result = compute_cov_mmd(rand_sample_pcs, rand_ref_pcs, batch_size=args.batch_size)
-#         result.update({"JSD": jsd})
-#
-#         print(result)
-#         print(result, file=fp)
-#         result_list.append(result)
-#     avg_result = {}
-#     for k in result_list[0].keys():
-#         avg_result.update({"avg-" + k: np.mean([x[k] for x in result_list])})
-#     print("average result:")
-#     print(avg_result)
-#     print(avg_result, file=fp)
-#     fp.close()
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample_dir", type=str, default='/home/Ex1/画论文teasor的素材/生成的结果/第4批/surfz_e230000_1k')
@@ -413,7 +285,7 @@ def main():
     ref_pcs = []
     if args.data_list is None:
         shape_paths = load_data_with_prefix(args.test_dir, 'pkl')[:128]
-    else:  # 仅使用验证集
+    else:
         with open(args.data_list, 'rb') as f:
             data_list = pickle.load(f)["val"]
         shape_paths = [os.path.join(args.test_dir, p.split("/")[-1]) for p in data_list]

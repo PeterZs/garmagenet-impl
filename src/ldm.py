@@ -1,9 +1,7 @@
 import os
-
 import argparse
-from datasets.sxd import *
+from datasets.garmage import *
 from trainer import *
-
 
 def get_args_ldm():
     parser = argparse.ArgumentParser()
@@ -30,7 +28,7 @@ def get_args_ldm():
     parser.add_argument("--denoiser_type", type=str, choices=['default', 'hunyuan_dit'], default='default',
                         help="Choose ldm type.")
     parser.add_argument('--lr', type=float, default=5e-4, help='')
-    # parser.add_argument('--device', type=str, default=None, help='')  # use --gpu instead
+
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
 
     # Training parameters
@@ -63,10 +61,10 @@ def get_args_ldm():
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help="Text encoder when applying text as generation condition.")
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
-    parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="")   # 提前采样好的点云，如果没有的话会从GT的Garmage中采样不均匀的点云
-    parser.add_argument("--pointcloud_feature_dir", type=str, default=None,  help="")
+    parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="")   # prepared pointcloud
+    parser.add_argument("--pointcloud_feature_dir", type=str, default=None,  help="")   # prepared pointcloud feature
     parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H"], help="")
-    parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="")   # 提前准备好的 sketch feature
+    parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="")   # prepared sketch feature
 
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
@@ -79,36 +77,20 @@ def get_args_ldm():
     # Schedular (DDPM、FlowMatchEulerDiscreteScheduler of hunyuan3d2.0)
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM", "HY_FMED"], help="")
     parser.add_argument("--scheduler_shift", type=int, default=3, help="")
-    parser.add_argument("--time_sample", type=str, default="uniform", choices=["uniform", ], help="")  # [TODO]
+    parser.add_argument("--time_sample", type=str, default="uniform", choices=["uniform", ], help="") 
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
     args = parser.parse_args()
+
     # saved folder
     args.log_dir = f'{args.log_dir}/{args.expr}'
+    if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
+
     return args
 
 
-
 def run(args):
-
-    # catch fault ===
-    if True:
-        # [test]
-        print("faulthandler")
-        import faulthandler
-        # faulthandler.enable()
-        faulthandler.enable(all_threads=True)
-
-
-    # # [test] ban wandb
-    # if True:
-    #     import wandb
-    #     wandb.finish()
-    #     wandb.init(mode="disabled")
-
-
-
     # Initialize dataset and trainer ===
     if args.option == 'surfpos':
         train_dataset = SurfPosData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
@@ -150,10 +132,7 @@ def run(args):
 
 if __name__ == "__main__":
     
-    # Parse input augments
+    # Parse input argument
     args = get_args_ldm()
-
-    # Make project directory if not exist
-    if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
     
     run(args)

@@ -4,10 +4,12 @@
 [![Github](https://img.shields.io/badge/github-Homepage-blue?logo=github)](https://style3d.github.io/garmagenet/)
 [![HuggingFace](https://img.shields.io/badge/huggingface-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/Style3D/GarmageSet)
 
-Block:
-\[
-x^2 + y^2
-\]
+行内公式：$x+y$
+
+块级公式：
+$$
+\text{Siran Li}^{1,2,*}
+$$
 
 [$\text{Siran Li}^{1,2,*}$]() 
 [$\text{Ruiyang Liu}^{4,2,*†}$](https://github.com/walnut-REE?tab=overview&from=2021-12-01&to=2021-12-31) 

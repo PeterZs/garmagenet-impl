@@ -144,7 +144,7 @@ def init_models(args):
     for k in args.latent_data_fields:
         model_z_dim += data_fields_dict[k]["len"]
 
-    # Load SurfZ Net ===
+    # Load Generation Model ===
     if args.denoiser_type == 'default':
         from src.network import GeometryGenNet
         print("Default Transformer-Encoder denoiser.")
@@ -215,19 +215,19 @@ def inference_one(
 
     surf_bbox, surf_uv_bbox = None, None
 
-    # SurfZ Denoising ---------------------------------------------------------------
+    # GeometryLatent+BBox Denoising ---------------------------------------------------------------
     latent_len = onestage_gen_model.z_dim
     latent = randn_tensor((1, max_surf, latent_len), device=device)
-    _surf_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
+    annention_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
     ddpm_scheduler.set_timesteps(1000//10)
     with torch.no_grad():
-        for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Z Denoising"):
+        for t in tqdm(ddpm_scheduler.timesteps, desc="Denoising"):
             timesteps = t.reshape(-1).to(device)
             pred = onestage_gen_model(
                 surfZ=latent,
                 timesteps=timesteps,
                 surfPos=None,
-                surf_mask=_surf_mask.to(device),
+                surf_mask=annention_mask.to(device),
                 class_label=None,
                 condition=condition_emb,
                 is_train=False)

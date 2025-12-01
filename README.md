@@ -93,6 +93,23 @@ python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --gpu 0
 ```
 
+#### Caption condition generation model training:
+
+```bash
+python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
+    --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
+    --surfvae <vae-checkpoint-path> \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_caption_cond/encoder_mode \
+    --expr Onestage_xyz_mask_pad_zero_caption_cond \
+    --train_nepoch 300000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
+    --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
+    --embed_dim 768 --num_layer 12 --pos_dim -1 --dropout 0.1 \
+    --text_encoder CLIP \
+    --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption \
+    --gpu 0
+```
+
 #### **Pointcloud condition** generation model training:
 
 Prepare pointcloud sampling (surface uniform sampling).
@@ -108,7 +125,7 @@ Run training.
 ```bash
 python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
     --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
-    --surfvae log/stylexd_vae_surf_256_xyz_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --surfvae <vae-checkpoint-path> \
     --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode \
     --expr Onestage_xyz_mask_pad_zero_pccond \
     --train_nepoch 300000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
@@ -155,8 +172,25 @@ Run inference **unconditional**.
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--vae <vae-checkpoint-path> \
 	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache <cache-path-for-inference> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_uncond/encoder_mode/one_stage_gen_validate.pkl \
 	--output generated/uncond \
+	--padding zero \
+	--block_dims 16 32 32 64 64 128 \
+	--img_channels 4 \
+	--pos_dim -1 \
+	--garmage_data_fields surf_ncs surf_mask \
+	--latent_data_fields latent64 bbox3d scale2d
+```
+
+Run inference to generate garmage with **caption condition** in validation set (saved in the cache).
+
+```bash
+python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+	--vae <vae-checkpoint-path> \
+	--onestage_gen <one-stage-model-ckpt-path> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_caption_cond/encoder_mode/one_stage_gen_validate.pkl \
+	--text_encoder CLIP \
+	--output generated/caption_cond \
 	--padding zero \
 	--block_dims 16 32 32 64 64 128 \
 	--img_channels 4 \
@@ -171,7 +205,7 @@ Run inference to generate garmage with **pointcloud condition** in validation se
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--vae <vae-checkpoint-path> \
 	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache <cache-path-for-inference> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode/one_stage_gen_validate.pkl \
 	--pointcloud_encoder POINT_E \
 	--output generated/pc_cond_uniform \
 	--padding zero \
@@ -188,7 +222,7 @@ Run inference to generate garmage with **sketch condition** in validation set (s
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--vae <vae-checkpoint-path> \
 	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache <cache-path-for-inference> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_sketchCond_laion2b/encoder_mode/one_stage_gen_validate.pkl \
 	--sketch_encoder LAION2B \
 	--output generated/sketch_cond \
 	--padding zero \

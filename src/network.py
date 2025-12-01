@@ -322,7 +322,7 @@ class PointcloudEncoder:
         if encoder == 'POINT_E':
             from src.models.pc_backbone.point_e.evals.feature_extractor import PointNetClassifier
             self.pointcloud_emb_dim = 512
-            self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='/data/lsr/models/PFID_evaluator', device_batch_size=1)
+            self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='<path-to-PFID_evaluator>/PFID_evaluator', device_batch_size=1)
             self.pointcloud_embedder_fn = self._get_pointe_pointcloud_embeds
         else:
             raise NotImplementedError
@@ -354,7 +354,7 @@ class SketchEncoder:
             self.sketch_emb_dim = 1280
             VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
             # https://huggingface.co/timm/vit_huge_patch14_clip_224.laion2b_ft_in12k_in1k/tree/main
-            safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
+            safetensors_path = '<path-to-the-model.safetensors>'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()
             with safe_open(safetensors_path, framework="pt") as f:

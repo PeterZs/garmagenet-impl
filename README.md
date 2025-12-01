@@ -125,9 +125,9 @@ python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_ro
 Prepare sketch feature. 
 
 ```bash
-python data_process/prepare_sketch_feature_radiov2.5h.py \
+python data_process/prepare_sketch_feature_vit.py  \
 	--root_dir <garmageset-root>/images \
-	--output_dir <garmageset-root>/feature_radio_v2.5-h
+	--output_dir <garmageset-root>/feature_laion2b
 ```
 
 Run training.
@@ -136,13 +136,13 @@ Run training.
 python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --list <datalist-path> --option onestage_gen \
     --surfvae <vae-checkpoint-path> \
-    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_sketchCond_radio_v2.5-h/encoder_mode \
-    --expr Onestage_xyz_mask_pad_zero_sketchCond_radio_v2.5-h \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_sketchCond_laion2b/encoder_mode \
+    --expr Onestage_xyz_mask_pad_zero_sketchCond_laion2b \
     --train_nepoch 200000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
     --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
     --embed_dim 768 --num_layer 12 --pos_dim -1 --dropout 0.1 \
-    --sketch_encoder RADIO_V2.5-H --sketch_feature_dir <garmageset-root>/feature_radio_v2.5-h \
+    --sketch_encoder LAION2B --sketch_feature_dir <garmageset-root>/feature_laion2b \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature \
     --gpu 0
 ```
@@ -156,7 +156,7 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--vae <vae-checkpoint-path> \
 	--onestage_gen <one-stage-model-ckpt-path> \
 	--cache <cache-path-for-inference> \
-	--sketch_encoder RADIO_V2.5-H
+	--sketch_encoder LAION2B
 	--output generated/
 	--padding zero
 	--block_dims 16 32 32 64 64 128

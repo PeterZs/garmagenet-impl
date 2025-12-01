@@ -353,6 +353,7 @@ class SketchEncoder:
             self.img_process = _transform(image_resolution)
             self.sketch_emb_dim = 1280
             VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
+            # https://huggingface.co/timm/vit_huge_patch14_clip_224.laion2b_ft_in12k_in1k/tree/main
             safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()

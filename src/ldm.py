@@ -10,7 +10,7 @@ def get_args_ldm():
     # Training parameters
     parser.add_argument('--expr', type=str, default="expr_default", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
-    parser.add_argument("--option", type=str, choices=['typology_gen', 'geometry_gen', 'onestage_gen'], default='onestage_gen')
+    parser.add_argument("--option", type=str, choices=['Topology_gen', 'geometry_gen', 'onestage_gen'], default='onestage_gen')
     parser.add_argument("--denoiser_type", type=str, choices=['default'], default='default', help="Choose ldm type.")
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM"], help="")
     parser.add_argument('--lr', type=float, default=5e-4, help='Learning rate.')
@@ -67,10 +67,10 @@ def get_args_ldm():
 
 def run(args):
     # Initialize dataset and trainer ===
-    if args.option == 'typology_gen':
-        train_dataset = TypologyGenData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
-        val_dataset = TypologyGenData(args.data, args.list, validate=True, aug=False, args=args)
-        ldm = TypologyGenTrainer(args, train_dataset, val_dataset)
+    if args.option == 'Topology_gen':
+        train_dataset = TopologyGenData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
+        val_dataset = TopologyGenData(args.data, args.list, validate=True, aug=False, args=args)
+        ldm = TopologyGenTrainer(args, train_dataset, val_dataset)
     elif args.option == 'geometry_gen':
         train_dataset = GeometryGenData(
             args.data, args.list, validate=False, aug=args.data_aug, args=args)

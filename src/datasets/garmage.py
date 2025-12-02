@@ -92,7 +92,7 @@ class VaeData(torch.utils.data.Dataset):
         return torch.FloatTensor(self.cache[index%len(self.cache)])
 
 
-class TypologyGenData(torch.utils.data.Dataset):
+class TopologyGenData(torch.utils.data.Dataset):
     """ Surface position (3D bbox) Dataloader """
     def __init__(self, input_data, input_list, validate=False, aug=False, args=None,):
         self.args = args
@@ -109,7 +109,7 @@ class TypologyGenData(torch.utils.data.Dataset):
 
         self.cache_fp = os.path.join(
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('ckpts', 'cache'),
-            'typology_gen_%s.pkl'%('validate' if validate else 'train')
+            'Topology_gen_%s.pkl'%('validate' if validate else 'train')
         )
         self.data_fields = args.data_fields
         self.padding = args.padding

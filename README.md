@@ -1,33 +1,46 @@
-## GarmageNet: A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling
+<h2 align="center">
+<img src="assets/images/logo.png" width="35%" align="center"> 
+<br/>
+<x-small>A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling</x-small>
+</h2>
 
-[![arXiv](https://img.shields.io/badge/📃-arXiv%20-red.svg)](https://arxiv.org/abs/2504.01483)
-[![Github](https://img.shields.io/badge/github-Homepage-blue?logo=github)](https://style3d.github.io/garmagenet/)
-[![HuggingFace](https://img.shields.io/badge/huggingface-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/Style3D/GarmageSet)
+<p align="center">
+    <a href="">Siran Li</a><sup>*</sup>,
+    <a href="https://walnut-ree.github.io/">Ruiyang Liu</a><sup>*&dagger;</sup>,
+    <a href="">Chen Liu</a><sup>*</sup>,
+    <a href="">Zhendong Wang</a>,
+    <a href="">Gaofeng He</a>,
+    <a href="https://dirtyharrylyl.github.io/">Yong-Lu Li</a>,
+    <a href="http://www.cad.zju.edu.cn/home/jin/">Xiaogang Jin</a>,
+    <a href="https://wanghmin.github.io/">Huamin Wang</a>
+</p>
 
-[Siran Li](),
-[Ruiyang Liu](https://github.com/walnut-REE) ,
-[Chen Liu](),
-[Zhendong Wang](https://wangzhendong619.github.io/),
-[Gaofeng He](),
-[YongLu Li](https://dirtyharrylyl.github.io/),
-[Xiaogang Jin](http://www.cad.zju.edu.cn/home/jin/),
-[Huamin Wang](https://wanghmin.github.io/)
+<p align="center">
+<a href="https://arxiv.org/abs/2504.01483"><img src='https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white' alt='arXiv'></a>
+<a href='https://style3d.github.io/garmagenet'><img src='https://img.shields.io/badge/Project_Page-Website-green?logo=googlechrome&logoColor=white' alt='Project Page'></a>
+<a href='https://huggingface.co/spaces'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Live_Demo-blue'></a>
+</p>
+<p align="center"><img src="assets/images/teaser.png" width="100%"></p>
 
-![](resources/assests/teaser.jpg)
-> We introduce GarmageNet, a novel uniform generation framework capable of producing complex and simulation-ready garments from various input modalities, including text prompts, sketch images, raw sewing patterns, or unstructured point clouds.
+> **GarmageNet** is a unified generative framework that automates the creation of 2D sewing patterns, the construction of sewing relationships, and the synthesis of 3D garment initializations compatible with physics-based simulation. Leveraging Garmage (a structured geometry image representation), it uses a latent-diffusion transformer to synthesize panels and GarmageJigsaw to predict point-to-point stitching, effectively closing the gap between 2D patterns and 3D shapes.
 
-![](resources/assests/overview.png)
-> The image above is an overview of GarmageNet. This project mainly focuses on the parts from **(a)** to **(b)**.
+## 💫 Updates
 
-## Requirements
+- **[December 01, 2025]** Release GarmageNet training code and pre-trained checkpoints 🤪
 
-### Environment (Tested)
-- Linux
-- Python 3.10
-- CUDA 11.8 
-- PyTorch 2.2
+- **[November 18, 2025]** First release of [GarmageSet](https://huggingface.co/datasets/Style3D/GarmageSet) dataset 
+🥳
 
-### Dependencies
+## 🔨 Installation
+
+**Tested Environment:** `Ubuntu 22.04` + `CUDA 11.8` + `Python 3.10` + `PyTorch 2.2`
+
+Clone the repo:
+
+```bash
+git clone https://github.com/Style3D/garmagenet-impl.git garmagenet
+cd garmagenet
+```
 
 Install PyTorch and other dependencies:
 ```
@@ -38,31 +51,26 @@ pip install -r requirements.txt
 pip install chamferdist
 ```
 
-## Data Preparation
+## 🎡 GarmageNet Training
 
-Download GarmageSet from [HuggingFace](https://huggingface.co/datasets/Style3D/GarmageSet/tree/main)
+### Data Preparation
 
-Prepare GarmageNet`s training data (Garmage):
+Download GarmageSet raw geometry from [HuggingFace](https://huggingface.co/datasets/Style3D/GarmageSet), and prepare training Garmages with:
 
 ``` bash
+# Render Garmages from raw OBJ
 python data_process/process_garmage.py \
     -i <garmageset-root>/raw \
     -o <garmageset-root>/garmages
-```
 
-Prepare datalist:
-``` bash
+# Prepare datalist
 python data_process/prepare_data_list.py \
     --garmage_dir <garmageset-root>/garmages \
     --output_dir <garmageset-root>/datalist
 ```
 
-## Training
-
-### Train VAE
-Firstly, train the VAE encoder to compress Garmages. By default, all Garmages in the dataset have a resolution of $256\times256$. Each garment is represented as a set of per-panel Garmages, forming a tensor of shape $N\times256\times256\times C$, where $C$ depends on the desired encoded fields. 
-For instance, the simplest Garmage has four channels: the first three encode geometric positions, while the last (alpha) outlines the sewing pattern. 
-**For example:**
+### Train Geometry Encoding VAE
+By default, dataset Garmages have a resolution of $`256\times 256`$. Each garment is represented as a tensor of shape $`N\times 256 \times 256 \times C`$, where $`N`$ denotes the number of panels and $`C`$ the channel depth. The standard configuration ($C=4$) consists of three channels for geometric positions and one alpha channel defining the sewing pattern outline. To train the VAE:
 
 ```bash
 python src/vae.py --data <garmageset-root>/garmages --use_data_root \
@@ -73,11 +81,9 @@ python src/vae.py --data <garmageset-root>/garmages --use_data_root \
     --data_fields surf_ncs surf_mask --chunksize 512
 ```
 
-### Train Diffusion Generation
-Based on the learned Garmage latent space, 
-we train model to map random samples from the standard normal distribution to the valid Garmages.
+### Train Diffusion Generator
 
-#### Unconditional generation model training:
+Unconditional generation:
 
 ```bash
 python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
@@ -93,7 +99,7 @@ python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --gpu 0
 ```
 
-#### Caption condition generation model training:
+Text prompt conditioned generation:
 
 ```bash
 python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
@@ -110,19 +116,15 @@ python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_ro
     --gpu 0
 ```
 
-#### **Pointcloud condition** generation model training:
-
-Prepare pointcloud sampling (surface uniform sampling).
+Pointcloud conditioned generation:
 
 ```bash
+# Prepare pointcloud sampling (surface uniform sampling).
 python data_process/prepare_pc_cond_sample.py \
 	--dataset_folder <garmageset-root>/raw \
 	--pc_output_folder <garmageset-root>/pc_cond_sample_uniform
-```
 
-Run training.
-
-```bash
+# Run training
 python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
     --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
     --surfvae <vae-checkpoint-path> \
@@ -137,19 +139,15 @@ python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_ro
     --gpu 0
 ```
 
-#### **Sketch condition** generation model training:
-
-Prepare sketch feature. 
+Line-art sketch conditioned generation:
 
 ```bash
+# Prepare sketch feature. 
 python data_process/prepare_sketch_feature_vit.py  \
 	--root_dir <garmageset-root>/images \
 	--output_dir <garmageset-root>/feature_laion2b
-```
 
-Run training.
-
-```bash
+# Run training
 python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --list <datalist-path> --option onestage_gen \
     --surfvae <vae-checkpoint-path> \
@@ -164,9 +162,9 @@ python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --gpu 0
 ```
 
-## Inference 
+## 🍭 Generate Garmages from Pre-trained Checkpoints 
 
-Run inference **unconditional**.
+**Unconditional** generation:
 
 ```bash
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
@@ -182,7 +180,7 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--latent_data_fields latent64 bbox3d scale2d
 ```
 
-Run inference to generate garmage with **caption condition** in validation set (saved in the cache).
+Generate garmage with **text prompts**:
 
 ```bash
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
@@ -199,7 +197,7 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--latent_data_fields latent64 bbox3d scale2d
 ```
 
-Run inference to generate garmage with **pointcloud condition** in validation set (saved in the cache).
+Generate garmage with **unstructured pointclouds**:
 
 ```bash
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
@@ -216,7 +214,7 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--latent_data_fields latent64 bbox3d scale2d
 ```
 
-Run inference to generate garmage with **sketch condition** in validation set (saved in the cache).
+Generate garmage with **line-art sketches** (prefer front-view):
 
 ```bash
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \

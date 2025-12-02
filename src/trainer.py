@@ -264,8 +264,8 @@ def get_condition_dim(args, self):
     return condition_dim
 
 
-class TypologyGenTrainer():
-    """ Garment Typology Trainer (for 3D bbox generation) """
+class TopologyGenTrainer():
+    """ Garment Topology Trainer (for 3D bbox generation) """
     def __init__(self, args, train_dataset, val_dataset):
         # Initilize model and load to gpu
         self.iters = 0
@@ -305,7 +305,7 @@ class TypologyGenTrainer():
         # Initialize network
         if args.denoiser_type == "default":
             print("Default Transformer-Encoder denoiser.")
-            model = TypologyGenNet(
+            model = TopologyGenNet(
                 p_dim=self.pos_dim * 2,
                 embed_dim=args.embed_dim,
                 condition_dim=self.condition_dim,
@@ -649,7 +649,7 @@ class TypologyGenTrainer():
             'bbox_scaled': self.bbox_scaled,
             'optimizer': self.optimizer.state_dict(),
             "scaler": self.scaler.state_dict()
-        }, os.path.join(ckpt_log_dir, f'typology_e{self.epoch:04d}.pt'))
+        }, os.path.join(ckpt_log_dir, f'Topology_e{self.epoch:04d}.pt'))
         return
 
 

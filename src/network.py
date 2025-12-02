@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import List, Tuple, Union
 
 from PIL import Image
 from torch.nn import functional as F
@@ -12,19 +12,8 @@ from diffusers.utils import BaseOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.autoencoders.vae import Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
 
-from typing import Any, Callable, Dict, List, Optional, Union
-
 
 def sincos_embedding(input, dim, max_period=10000):
-    """
-    Create sinusoidal timestep embeddings.
-
-    :param input: a N-D Tensor of N indices, one per batch element.
-                      These may be fractional.
-    :param dim: the dimension of the output.
-    :param max_period: controls the minimum frequency of the embeddings.
-    :return: an [N x dim] Tensor of positional embeddings.
-    """
     half = dim //2
     freqs = torch.exp(
         -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) /half
@@ -236,20 +225,6 @@ class AutoencoderKLFastDecode(ModelMixin, ConfigMixin):
     def forward(
         self, z: torch.FloatTensor, return_dict: bool = True, generator=None
     ) -> Union[DecoderOutput, torch.FloatTensor]:
-        """
-        Decode a batch of images.
-
-        Args:
-            z (`torch.FloatTensor`): Input batch of latent vectors.
-            return_dict (`bool`, *optional*, defaults to `True`):
-                Whether to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
-
-        Returns:
-            [`~models.vae.DecoderOutput`] or `tuple`:
-                If return_dict is True, a [`~models.vae.DecoderOutput`] is returned, otherwise a plain `tuple` is
-                returned.
-
-        """
         decoded = self._decode(z).sample
         return decoded    
 
@@ -421,13 +396,13 @@ class SketchEncoder:
         return self.sketch_embedder_fn(sketch_fp)
 
 
-class TypologyGenNet(nn.Module):
+class TopologyGenNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
 
     def __init__(self, p_dim=6, embed_dim=768, condition_dim=-1, num_cf=-1):
-        super(TypologyGenNet, self).__init__()
+        super(TopologyGenNet, self).__init__()
 
         self.p_dim = p_dim
         self.embed_dim = embed_dim
@@ -475,15 +450,13 @@ class TypologyGenNet(nn.Module):
         """ forward pass """
         bsz, seq_len, _ = surfPos.shape
         bsz = timesteps.size(0)
+
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         p_embeds = self.p_embed(surfPos)   
         
         tokens = p_embeds + time_embeds
                     
         if self.use_cf and class_label is not None:  # classifier-free
-            # if is_train:
-            #     uncond_mask = torch.rand(bsz) <= 0.1
-            #     class_label[uncond_mask] = 0
             c_embeds = self.class_embed(class_label)
             c_embeds = c_embeds.unsqueeze(1)
             c_embeds = c_embeds.repeat((1, seq_len, 1))
@@ -499,6 +472,7 @@ class TypologyGenNet(nn.Module):
         pred = self.fc_out(output)
 
         return pred
+
 
 class GeometryGenNet(nn.Module):
     """
@@ -579,28 +553,21 @@ class GeometryGenNet(nn.Module):
             nn.Linear(self.embed_dim, self.z_dim) if self.out_dim<0 else nn.Linear(self.embed_dim, self.out_dim) ,
         )
 
-        return
-
        
     def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
         """ forward pass """
+
         bsz = timesteps.size(0)
 
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
         z_embeds = self.z_embed(surfZ)
+        
         if self.p_dim > 0:
             p_embeds = self.p_embed(surfPos)
             tokens = z_embeds + p_embeds + time_embeds
         else:
             tokens = z_embeds + time_embeds
 
-        # if self.use_cf and class_label is not None:  # classifier-free
-        #     if is_train:
-        #         uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1
-        #         class_label[uncond_mask] = 0
-        #     c_embeds = self.class_embed(class_label.squeeze(-1))
-        #     tokens += c_embeds
-            
         if self.condition_dim > 0 and condition is not None:
             cond_token = self.cond_embed(condition)
             if len(cond_token.shape) == 2:
@@ -609,10 +576,12 @@ class GeometryGenNet(nn.Module):
                 tokens = tokens + cond_token  # [B, n_surfs, emb_dim]
             else:
                 raise NotImplementedError
+            
         output = self.net(
             src=tokens.permute(1,0,2),
             src_key_padding_mask=surf_mask,
         ).transpose(0,1)
 
         pred = self.fc_out(output)
+        
         return pred

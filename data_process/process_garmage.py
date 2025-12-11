@@ -18,7 +18,7 @@ import igl
 from geomdl import fitting, BSpline, utilities
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from geometry_utils.obj import read_obj
+from data_process.utils.obj import read_obj
 
 torch.set_grad_enabled(False)
 

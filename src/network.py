@@ -401,11 +401,16 @@ def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
 class SpatialDiTBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
+    """
+    A DiT Block that includes Cross-Attention for spatial conditioning.
+    Flow: AdaLN -> Self-Attn -> Cross-Attn -> AdaLN -> MLP
+    """
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, batch_first=True)
         
+        # Cross-Attention Layer
         self.norm_cross = nn.LayerNorm(hidden_size)
         self.cross_attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, batch_first=True)
 
@@ -417,27 +422,51 @@ class SpatialDiTBlock(nn.Module):
             nn.Linear(mlp_hidden_dim, hidden_size),
         )
 
+        # AdaLN Modulation: 
+        # Regresses 6 parameters: 
+        # (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp)
+        # We generally treat Cross-Attn as "always on", or add gating for it too.
+        # Here we stick to standard DiT-AdaLNZero for the self-attn/mlp parts.
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
+        
 
-    def forward(self, x, t, c=None, mask=None):
+    def forward(self, x, t, context=None, mask=None):
+        """
+        x: (B, N, D) - 3D Latents
+        t: (B, D)    - Timestep Embeddings
+        context: (B, M, D) - Image Features (RADIO)
+        mask: (B, N) - Padding mask for x
+        """
+        
+        print('SpatialDiTBlock input:', x.shape, t.shape, context.shape, mask.shape if mask is not None else None)
+
+        # 1. Regress Modulation Parameters from Timestep
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t)[:, None].chunk(6, dim=-1)
         )
 
+        print('*** adaLN output: ', shift_msa.shape, scale_msa.shape, gate_msa.shape, shift_mlp.shape, scale_mlp.shape, gate_mlp.shape)
+
+        # 2. Self-Attention Block (Time-Modulated)
         x_norm = modulate(self.norm1(x), shift_msa, scale_msa)
+        print('*** x_norm: ', x_norm.shape, x_norm.min(), x_norm.max())
+        
+        # Handle mask for Self-Attention if needed (tgt_key_padding_mask)
+        # Note: nn.MultiheadAttention expects key_padding_mask
         attn_out, _ = self.attn(x_norm, x_norm, x_norm, key_padding_mask=mask)
         x = x + gate_msa * attn_out
 
-        # Cross-attention with local-aware condition c
-        if c is not None:
+        # 3. Cross-Attention Block (Spatially Aware)
+        # We usually apply standard Norm before Cross-Attn
+        if context is not None:
             x_norm_cross = self.norm_cross(x)
-            cross_out, _ = self.cross_attn(query=x_norm_cross, key=c, value=c, key_padding_mask=mask)
-            x = x + cross_out
+            cross_out, _ = self.cross_attn(query=x_norm_cross, key=context, value=context)
+            x = x + cross_out 
 
-        # Modulate with global conditions (stored in t)
+        # 4. MLP Block (Time-Modulated)
         x_norm = modulate(self.norm2(x), shift_mlp, scale_mlp)
         mlp_out = self.mlp(x_norm)
         x = x + gate_mlp * mlp_out
@@ -522,7 +551,7 @@ class GarmageNet(nn.Module):
         )
   
     def forward(
-            self, pos, z, timesteps, mask, class_label=None, 
+            self, pos, z, timesteps, mask=None, class_label=None, 
             cond_global=None,       # global features like text prompt
             cond_local=None,        # local-aware features like pointcloud/sketch
             is_train=False):
@@ -530,28 +559,34 @@ class GarmageNet(nn.Module):
         bsz, seq_len, _ = pos.shape
 
         x = self.z_embed(z) # [B, N, D]
+        print('*** x: ', x.shape, x.min(), x.max())
         if self.p_dim > 0: x = x + self.p_embed(pos)    # Add position signal (3D bounding box and 2D scale)
+        print('*** x: ', x.shape, x.min(), x.max())
 
-        t_embs = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
+        t_embs = self.time_embed(sincos_embedding(timesteps, self.embed_dim))
+        print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Add class embedding to time embeddings
-        if self.use_cf and class_label is not None:
+        if self.n_classes > 0 and class_label is not None:
             if is_train: class_label[torch.rand(bsz, seq_len, 1) <= 0.1] = 0    # 10% random drop
             t_embs = t_embs + self.class_embed(class_label)
+            print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Processing global features (e.g. text prompt)
         if self.condition_dim > 0 and cond_global is not None:
             cond_token = self.cond_embed(cond_global)
-            cond_token = cond_token[:, None] if len(cond_token.shape) == 2 else cond_token
             t_embs = t_embs + cond_token
             cond_token = None
+            print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
+
         
         # Processing local-aware features (e.g. pointcloud/sketch)
         if self.condition_dim > 0 and cond_local is not None:
             cond_token = self.cond_embed(cond_local)
             cond_token = cond_token[:, None] if len(cond_token.shape) == 2 else cond_token  # [B, n_surfs, emb_dim]
+            print('*** cond_token: ', cond_token.shape, cond_token.min(), cond_token.max())
         
-        for block in self.blocks: x = block(x, t_embs, c=cond_token, mask=mask)
+        for block in self.net: x = block(x, t_embs, context=cond_token, mask=mask)
             
         x = self.final_norm(x)
         pred = self.fc_out(x)

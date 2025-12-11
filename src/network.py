@@ -361,13 +361,15 @@ class SketchEncoder:
             raise NotImplementedError
         print(f"[DONE] Init {encoder} sketch encoder.")
 
+
     def _get_laion2b_sketch_embeds(self, sketch_fp):
         image = Image.open(sketch_fp).convert('RGB')
         image = self.img_process(image)
         image = image.to(self.device).unsqueeze(0)
         sketch_features = self.sketch_encoder.forward_features(image).squeeze()
-        sketch_features = sketch_features[0].unsqueeze(0)
+        sketch_features = sketch_features[1:]
         return sketch_features
+
 
     def _get_radiov2_5h_sketch_embeds(self, sketch_fp, resize=True):
         with torch.no_grad():
@@ -390,22 +392,19 @@ class SketchEncoder:
             # inference
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 summary, _ = self.model(x)
-            sketch_features = summary[0]
+            sketch_features = summary[1:]
             return sketch_features
 
     def __call__(self, sketch_fp):
         return self.sketch_embedder_fn(sketch_fp)
 
 
-def modulate(x, shift, scale):
-    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
-
 class SpatialDiTBlock(nn.Module):
     """
     A DiT Block that includes Cross-Attention for spatial conditioning.
     Flow: AdaLN -> Self-Attn -> Cross-Attn -> AdaLN -> MLP
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **kwargs):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, batch_first=True)
@@ -432,6 +431,8 @@ class SpatialDiTBlock(nn.Module):
             nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
         
+    def modulate(self, x, shift, scale):
+        return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
     def forward(self, x, t, context=None, mask=None):
         """
@@ -451,7 +452,7 @@ class SpatialDiTBlock(nn.Module):
         print('*** adaLN output: ', shift_msa.shape, scale_msa.shape, gate_msa.shape, shift_mlp.shape, scale_mlp.shape, gate_mlp.shape)
 
         # 2. Self-Attention Block (Time-Modulated)
-        x_norm = modulate(self.norm1(x), shift_msa, scale_msa)
+        x_norm = self.modulate(self.norm1(x), shift_msa, scale_msa)
         print('*** x_norm: ', x_norm.shape, x_norm.min(), x_norm.max())
         
         # Handle mask for Self-Attention if needed (tgt_key_padding_mask)
@@ -467,7 +468,7 @@ class SpatialDiTBlock(nn.Module):
             x = x + cross_out 
 
         # 4. MLP Block (Time-Modulated)
-        x_norm = modulate(self.norm2(x), shift_mlp, scale_mlp)
+        x_norm = self.modulate(self.norm2(x), shift_mlp, scale_mlp)
         mlp_out = self.mlp(x_norm)
         x = x + gate_mlp * mlp_out
 

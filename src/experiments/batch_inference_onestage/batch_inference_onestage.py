@@ -239,11 +239,17 @@ def inference_one(
             pos = ddpm_scheduler.step(pred[...,64:], t, pos).prev_sample
 
     # Filter out invalid token by the variance
-    latent_valid_mask = latent.var(-1)>1e-3
-    # latent_valid_mask = (pos[..., 3:6].mean(-1) > 1e-3)
-    n_surfs = latent_valid_mask.sum(-1)
-    latent = latent[latent_valid_mask]
-    pos = pos[latent_valid_mask]
+    panel_valid_mask = latent.var(-1)>1e-3
+
+    # check filter ambiguity
+    if True:
+        filt_diff = torch.sum((latent.var(-1)>1e-3) != (pos.var(-1)>1e-3))
+        if filt_diff>0:
+            print(f"\n\n=== Filter ambiguity size {filt_diff} happen between latent and bbox. ===\n\n")
+
+    n_surfs = panel_valid_mask.sum(-1)
+    latent = latent[panel_valid_mask]
+    pos = pos[panel_valid_mask]
 
     geo_latent = latent
     surf_bbox_ccwh = pos[...,:6].detach().cpu().numpy()
@@ -437,11 +443,7 @@ def run_image(args):
 
     os.makedirs(args.output, exist_ok=True)
 
-    # reference_sketch_dir = "/data/lsr/resources/Anta/251111_训练集_对比原图和增强/images/ANTA_silhouettes_trainset_sample50_AUGed"
-    # reference_sketch_dir = "/home/ubuntu/桌面/米白色渲染图/推理测试"
-    # reference_sketch_dir = "/data/lsr/resources/Anta/251225_crossattention/images_combined_val/images"
-    reference_sketch_dir = "/home/Ex1/data/resources/Anta/251225_crossattention/image_gemini_改款/随机组合/image"
-
+    reference_sketch_dir = args.inference_data
     reference_sketch_fp_list = sorted(glob(os.path.join(reference_sketch_dir, "*.png")))
     for idx, sketch_fp in tqdm(enumerate(reference_sketch_fp_list)):
         try:
@@ -490,6 +492,10 @@ if __name__ == "__main__":
         default=None,
         help='Path to cache file')
     parser.add_argument(
+        '--inference_data', type=str, default=None,
+        help='Sketch encoder type.')
+
+    parser.add_argument(
         '--output', type=str, default='generated',
         help='Path to output directory')
     
@@ -510,6 +516,13 @@ if __name__ == "__main__":
     parser.add_argument('--device', type=str, default="cuda", help='')
 
     args = parser.parse_args()
+
+    if args.task == 'cache' and not os.path.exists(args.cache):
+        raise FileNotFoundError(f"File {args.cache} not found.")
+    if args.task == 'cache' and args.inference_data is not None:
+        raise ValueError('inference_data cannot be used with cache.')
+    if args.task != 'cache' and not os.path.exists(args.inference_data):
+        raise FileNotFoundError(f"File {args.inference_data} not found.")
 
     check_cond(args)
 

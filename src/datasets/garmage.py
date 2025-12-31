@@ -400,6 +400,7 @@ class GeometryGenData(torch.utils.data.Dataset):
         self.padding = args.padding
 
         self.condition_type = args.condition_type
+        self.feature_kwd = args.feature_kwd
         print(f"Condition Type: {self.condition_type}.")
         if "pointcloud_feature" in self.data_fields:
             print("Use Pointcloud feature.")
@@ -554,7 +555,7 @@ class GeometryGenData(torch.utils.data.Dataset):
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.pkl")))
+                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), f"*_{self.feature_kwd}.pkl")))
                 if len(sketch_feature_fp) == 0:
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
                 else:

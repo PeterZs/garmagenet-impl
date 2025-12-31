@@ -56,7 +56,7 @@ def get_condition_dim(args, self):
             condition_dim = 1536
         elif args.sketch_encoder == "RADIO_V2.5-H":
             condition_dim = 3840
-        elif args.sketch_encoder == "RADIO_V2.5-H_saptial":
+        elif args.sketch_encoder == "RADIO_V2.5-H_spatial":
             condition_dim = 1280
         else:
             raise NotImplementedError("args.sketch_encoder name wrong.")

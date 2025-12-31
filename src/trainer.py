@@ -662,13 +662,17 @@ class GarmageNetTrainer():
                 batch_size=self.batch_size, num_workers=16)
 
         # Calculating metrics on result ===
-
-
         return
     
-    def save_model(self):
+    def save_model(self, save_last=False):
         ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
         os.makedirs(ckpt_log_dir, exist_ok=True)
+
+        if not save_last:
+            ckpt_name = f'geometrygen_e{self.epoch:04d}.pt'
+        else:
+            ckpt_name = f'last.pt'
+
         torch.save(
             {
                 'model_state_dict': self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
@@ -677,5 +681,5 @@ class GarmageNetTrainer():
                 'optimizer': self.optimizer.state_dict(),
                 "scaler": self.scaler.state_dict()
             },
-            os.path.join(ckpt_log_dir, f'geometrygen_e{self.epoch:04d}.pt'))
+            os.path.join(ckpt_log_dir, ckpt_name))
         return

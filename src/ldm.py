@@ -22,6 +22,7 @@ def get_args_ldm():
     parser.add_argument('--train_nepoch', type=int, default=3000, help='Number of epochs to train for.')
     parser.add_argument('--test_nepoch', type=int, default=10, help='Number of epochs to test model.')
     parser.add_argument('--save_nepoch', type=int, default=1000, help='Number of epochs to save model.')
+    parser.add_argument('--save_last_nepoch', type=int, default=1000, help='Number of epochs to save model.')
 
     # Dataset parameters
     parser.add_argument('--data', type=str, default=None, required=True,
@@ -47,6 +48,8 @@ def get_args_ldm():
     parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H", "RADIO_V2.5-H_spatial"], help="Sketch encoder type when applying sketch as generation condition.")
     parser.add_argument("--sketch_feature_dir", type=str, default=None,  help="Prepared sketch feature.")
     parser.add_argument("--condition_type", type=str, default='summary', choices=['summary', 'spatial'], help="Text encoder type when applying text as generation condition.")
+    parser.add_argument("--feature_kwd",
+                        type=str, default=None, help="Name for feature choice.")  # 提前准备好的 sketch feature
 
     # Model parameters
     parser.add_argument('--surfvae', type=str, default=None, required=True, help='Path to pretrained VAE weights')
@@ -93,6 +96,9 @@ def run(args):
         if ldm.epoch % args.save_nepoch == 0:
             ldm.save_model()
 
+        # save last model per epoch
+        if ldm.epoch % 1000 == 0:
+            ldm.save_model(save_last=True)
     return
 
 

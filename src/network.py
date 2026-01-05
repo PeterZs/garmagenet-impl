@@ -240,9 +240,9 @@ class TextEncoder:
         if encoder == 'CLIP':
             import transformers
             self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer')
+                "<Path2Model>/FLUX.1-dev", subfolder='tokenizer')
             text_encoder = transformers.CLIPTextModel.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder')
+                "<Path2Model>/FLUX.1-dev", subfolder='text_encoder')
             self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
             self.text_emb_dim = 768
             self.text_embedder_fn = self._get_clip_text_embeds
@@ -331,7 +331,7 @@ class SketchEncoder:
             self.img_process = _transform(image_resolution)
             self.sketch_emb_dim = 1280
             VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
-            safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
+            safetensors_path = '<Path2Model>/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()
             with safe_open(safetensors_path, framework="pt") as f:

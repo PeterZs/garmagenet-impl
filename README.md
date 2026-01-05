@@ -79,7 +79,7 @@ By default, dataset Garmages have a resolution of $`256\times 256`$. Each garmen
 
 ```bash
 python src/vae.py --data <garmageset-root>/garmages --use_data_root \
-    --list <garmageset-root>/datalist/garmageset_split_9_1.pkl \
+    --list <datalist-path> \
     --expr garmagenet_vae_surf_256_xyz_mask_unet6_latent_1 \
     --batch_size 64 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
     --test_nepoch 10 --save_nepoch 50 --train_nepoch 2000 \
@@ -108,8 +108,8 @@ python src/ldm.py \
 **Text prompt** conditioned generation:
 
 ```bash
-python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
-    --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
+python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
+    --list <datalist-path> --option onestage_gen \
     --surfvae <vae-checkpoint-path> \
     --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_caption_cond/encoder_mode \
     --expr Onestage_xyz_mask_pad_zero_caption_cond \
@@ -133,8 +133,8 @@ python data_process/prepare_pc_cond_sample.py \
 
 ```bash
 # Run training
-python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
-    --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
+python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
+    --list <datalist-path> --option onestage_gen \
     --surfvae <vae-checkpoint-path> \
     --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode \
     --expr Onestage_xyz_mask_pad_zero_pccond \
@@ -172,14 +172,6 @@ python src/ldm.py \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature \
     --gpu 0
 ```
-
-**If the training crashesed**, add the following part to the same training command.
-
-```bash
-	--finetune --weights <checkpoint-file-path>
-```
-
-
 
 ## 🍭 Generate Garmages from Pre-trained Checkpoints 
 
@@ -249,3 +241,13 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```
+
+
+
+## ⭐ Acknowledgements
+
+We extend our sincere gratitude to the following open-source projects and research initiatives, whose contributions laid the foundation for GarmageNet:
+
+- [**BrepGen**](https://github.com/samxuxiang/BrepGen)
+- [**Jigsaw**](https://github.com/Jiaxin-Lu/Jigsaw)
+

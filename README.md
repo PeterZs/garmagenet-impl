@@ -30,9 +30,11 @@
 
 - **[November 18, 2025]** First release of [GarmageSet](https://huggingface.co/datasets/Style3D/GarmageSet) dataset 🥳
 
-- **[January 05, 2025]** Release GarmageNet training code.
+- **[January 05, 2026]** Code release for GarmageNet.
 
+- **[January 06, 2026]** Code release for GarmageJigsaw.
 
+The following sections provide instructions on how to set up and train ***GarmageNet***. For details regarding the training and testing of ***GarmageJigsaw***, and its integration into [Style3D Studio](https://www.style3d.com/products/studio), please refer to [garmage_jigsaw](./garmage_jigsaw/).
 
 ## 🔨 Installation
 
@@ -241,7 +243,6 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```
-
 
 
 ## ⭐ Acknowledgements

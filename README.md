@@ -18,7 +18,7 @@
 <p align="center">
 <a href="https://arxiv.org/abs/2504.01483"><img src='https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white' alt='arXiv'></a>
 <a href='https://style3d.github.io/garmagenet'><img src='https://img.shields.io/badge/Project_Page-Website-green?logo=googlechrome&logoColor=white' alt='Project Page'></a>
-<a href='https://huggingface.co/spaces'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Live_Demo-blue'></a>
+<a href='https://huggingface.co/datasets/Style3D/GarmageSet'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
 </p>
 <p align="center"><img src="./assets/images/garmage_teaser.png" width="100%"></p>
 

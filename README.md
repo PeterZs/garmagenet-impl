@@ -243,6 +243,8 @@ python src/experiments/batch_inference/batch_inference.py \
 	--latent_data_fields latent64
 ```
 
+## 📃 License
+This project is licensed under the CC BY-NC-ND 4.0 License - see the [LICENSE](LICENSE) file for details.
 
 
 ## 🌟 Acknowledgements

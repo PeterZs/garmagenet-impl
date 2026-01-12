@@ -245,7 +245,7 @@ python src/experiments/batch_inference/batch_inference.py \
 
 
 
-## ⭐ Acknowledgements
+## 🌟 Acknowledgements
 
 We extend our sincere gratitude to the following open-source projects and research initiatives, whose contributions laid the foundation for GarmageNet:
 
@@ -256,12 +256,8 @@ We are also deeply indebted to the broader research community for their pioneeri
 
 
 
-## ⚖️ LICENSE
-
-This model and code are released under the **[MIT License](LICENSE)**.
-
-The dataset [GarmageSet](https://huggingface.co/datasets/Style3D/GarmageSet) are released under the **[cc-by-nc-nd-4.0
-](https://spdx.org/licenses/CC-BY-NC-ND-4.0)**
+## 📃 License
+This project is licensed under the CC BY-NC-ND 4.0 License - see the [LICENSE](LICENSE) file for details.
 
 
 

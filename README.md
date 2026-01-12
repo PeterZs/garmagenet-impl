@@ -1,5 +1,5 @@
 <h2 align="center">
-<img src="assets/images/logo.png" width="35%" align="center"> 
+<img src="./assets/images/garmagenet_logo.png" width="35%" align="center"> 
 <br/>
 <x-small>A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling</x-small>
 </h2>
@@ -18,9 +18,9 @@
 <p align="center">
 <a href="https://arxiv.org/abs/2504.01483"><img src='https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white' alt='arXiv'></a>
 <a href='https://style3d.github.io/garmagenet'><img src='https://img.shields.io/badge/Project_Page-Website-green?logo=googlechrome&logoColor=white' alt='Project Page'></a>
-<a href='https://huggingface.co/spaces'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Live_Demo-blue'></a>
+<a href='https://huggingface.co/datasets/Style3D/GarmageSet'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
 </p>
-<p align="center"><img src="assets/images/teaser.png" width="100%"></p>
+<p align="center"><img src="./assets/images/garmage_teaser.png" width="100%"></p>
 
 > **GarmageNet** is a unified generative framework that automates the creation of 2D sewing patterns, the construction of sewing relationships, and the synthesis of 3D garment initializations compatible with physics-based simulation. Leveraging Garmage (a structured geometry image representation), it uses a latent-diffusion transformer to synthesize panels and GarmageJigsaw to predict point-to-point stitching, effectively closing the gap between 2D patterns and 3D shapes.
 
@@ -30,9 +30,12 @@
 
 - **[November 18, 2025]** First release of [GarmageSet](https://huggingface.co/datasets/Style3D/GarmageSet) dataset 🥳
 
-- **[January 05, 2025]** Release GarmageNet training code.
+- **[January 05, 2026]** Code release for GarmageNet.
 
+- **[January 06, 2026]** Code release for [GarmageJigsaw](https://github.com/Style3D/garmagejigsaw-impl).
 
+The following sections provide instructions on how to set up and train ***GarmageNet***. 
+For details regarding the training and testing of ***GarmageJigsaw***, and its integration into [Style3D Studio](https://www.style3d.com/products/studio), please refer to the [GarmageJigsaw Repo](https://github.com/Style3D/garmagejigsaw-impl).
 
 ## 🔨 Installation
 
@@ -237,7 +240,6 @@ python src/experiments/batch_inference/batch_inference.py \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```
-
 
 
 ## ⭐ Acknowledgements

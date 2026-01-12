@@ -176,6 +176,8 @@ python src/ldm.py \
     --gpu 0
 ```
 
+
+
 ## 🍭 Generate Garmages from Pre-trained Checkpoints 
 
 **Unconditional** generation:
@@ -242,6 +244,7 @@ python src/experiments/batch_inference/batch_inference.py \
 ```
 
 
+
 ## ⭐ Acknowledgements
 
 We extend our sincere gratitude to the following open-source projects and research initiatives, whose contributions laid the foundation for GarmageNet:
@@ -250,3 +253,31 @@ We extend our sincere gratitude to the following open-source projects and resear
 - [**Jigsaw**](https://github.com/Jiaxin-Lu/Jigsaw)
 
 We are also deeply indebted to the broader research community for their pioneering exploration and invaluable insights into the field of garment modeling.
+
+
+
+## ⚖️ LICENSE
+
+This model and code are released under the **[MIT License](LICENSE)**.
+
+The dataset [GarmageSet](https://huggingface.co/datasets/Style3D/GarmageSet) are released under the **[cc-by-nc-nd-4.0
+](https://spdx.org/licenses/CC-BY-NC-ND-4.0)**
+
+
+
+## 📚 Citation
+
+If you find our work useful for your research, please cite our work:
+
+```
+@article{li2025garmagenet,
+  title={GarmageNet: A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling},
+  author={Li, Siran and Liu, Ruiyang and Liu, Chen and Wang, Zhendong and He, Gaofeng and Li, Yong-Lu and Jin, Xiaogang and Wang, Huamin},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={44},
+  number={6},
+  pages={1--23},
+  year={2025},
+  publisher={ACM New York, NY, USA}
+}
+```
